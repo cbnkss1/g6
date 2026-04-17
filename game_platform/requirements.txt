@@ -1,0 +1,18 @@
+# game_platform 전용 — v6 requirements와 분리
+fastapi>=0.103.0
+uvicorn[standard]>=0.22.0
+# WS: 일부 venv에서 [standard] extras 가 빠지면 /admin/ws 가 404·Unsupported upgrade 로 끊김
+websockets>=12,<17
+wsproto>=1.2
+SQLAlchemy>=2.0.23
+psycopg2-binary>=2.9.9
+pydantic>=2.4.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+alembic>=1.13.0
+httpx>=0.27.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.1,<4.3
+PyJWT>=2.8.0
+pyotp>=2.9.0
+qrcode>=8.0

@@ -1,0 +1,13 @@
+**/node_modules/
+**/.next/
+**/.turbo/
+.env
+.env.*
+!.env.example
+!.example.env
+*.pyc
+__pycache__/
+.pytest_cache/
+*.egg-info/
+dist/
+.DS_Store
