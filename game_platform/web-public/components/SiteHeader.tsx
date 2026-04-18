@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { formatPlayerMoney } from "@/lib/formatPlayerMoney";
 import { usePlayerAuth } from "@/lib/playerAuthContext";
 import { playerAdminWebUrl, playerMemoUrl, playerSupportUrl } from "@/lib/playerExternalLinks";
 
@@ -12,26 +13,24 @@ export function SiteHeader() {
   const adminUrl = playerAdminWebUrl();
 
   const extLink =
-    "rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-400 hover:border-premium/30 hover:text-premium-glow sm:text-sm";
+    "rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-400 hover:border-quantum-cyan/35 hover:text-quantum-cyan sm:text-sm";
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/5 bg-[#060b14]/90 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b border-quantum-cyan/15 bg-[#060b14]/92 backdrop-blur-md shadow-[0_0_32px_rgba(34,211,238,0.06)]">
       <div className="mx-auto flex min-h-14 max-w-[1600px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 sm:flex-nowrap sm:px-6 sm:py-0">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <Link
-            href="/"
-            className="font-display text-lg font-semibold tracking-wide text-premium sm:text-2xl"
-            style={{ textShadow: "0 0 24px rgba(212,175,55,0.35)" }}
-          >
-            SLOTPASS
+          <Link href="/" className="group flex items-baseline gap-2">
+            <span className="bg-gradient-to-r from-quantum-cyan via-white to-quantum-magenta bg-clip-text font-display text-lg font-semibold tracking-wide text-transparent drop-shadow-quantum sm:text-2xl">
+              SLOTPASS
+            </span>
+            <span className="hidden text-[10px] font-bold uppercase tracking-[0.35em] text-quantum-magenta/90 lg:inline">
+              Quantum
+            </span>
           </Link>
-          <span className="hidden text-[10px] uppercase tracking-[0.25em] text-slate-500 lg:inline">
-            quantum
-          </span>
           <nav className="hidden items-center gap-1 md:flex">
             <Link
               href="/wallet"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-white/5 hover:text-premium-glow sm:text-sm"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-quantum-cyan/5 hover:text-quantum-cyan sm:text-sm"
             >
               입출금
             </Link>
@@ -55,15 +54,20 @@ export function SiteHeader() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           {hydrated && user ? (
             <>
-              <span className="hidden font-mono text-xs text-premium/90 xl:inline">
-                {user.game_money_balance != null ? user.game_money_balance : "—"}
-              </span>
+              <div className="flex min-w-0 max-w-[min(52vw,14rem)] flex-col items-end gap-0.5 text-right sm:max-w-none md:flex-row md:items-baseline md:gap-2">
+                <span className="font-mono text-[11px] tabular-nums text-quantum-cyan/90 sm:text-xs">
+                  보유 {formatPlayerMoney(user.game_money_balance)}원
+                </span>
+                <span className="font-mono text-[10px] tabular-nums text-slate-500">
+                  롤링P {formatPlayerMoney(user.rolling_point_balance)}P
+                </span>
+              </div>
               <span className="hidden max-w-[120px] truncate text-sm text-slate-400 sm:inline md:max-w-[160px]">
                 {user.display_name || user.login_id}
               </span>
               <Link
                 href="/wallet"
-                className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-premium/30 hover:text-premium-glow md:hidden"
+                className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-quantum-cyan/35 hover:text-quantum-cyan md:hidden"
               >
                 입출금
               </Link>
@@ -72,7 +76,7 @@ export function SiteHeader() {
                   href={supportUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg border border-white/10 px-2 py-1.5 text-xs text-slate-400 hover:text-premium-glow md:hidden"
+                  className="rounded-lg border border-white/10 px-2 py-1.5 text-xs text-slate-400 hover:text-quantum-cyan md:hidden"
                 >
                   고객
                 </a>
@@ -82,7 +86,7 @@ export function SiteHeader() {
                   href={memoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg border border-white/10 px-2 py-1.5 text-xs text-slate-400 hover:text-premium-glow md:hidden"
+                  className="rounded-lg border border-white/10 px-2 py-1.5 text-xs text-slate-400 hover:text-quantum-cyan md:hidden"
                 >
                   쪽지
                 </a>
@@ -99,13 +103,13 @@ export function SiteHeader() {
             <>
               <Link
                 href="/wallet"
-                className="hidden rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-400 hover:text-premium-glow sm:inline"
+                className="hidden rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-400 hover:text-quantum-cyan sm:inline"
               >
                 입출금
               </Link>
               <button
                 type="button"
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:border-premium/30 hover:text-premium-glow"
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:border-quantum-cyan/35 hover:text-quantum-cyan"
                 onClick={() => openLogin()}
               >
                 로그인

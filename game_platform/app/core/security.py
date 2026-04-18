@@ -18,7 +18,11 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: Optional[str]) -> bool:
     if not hashed:
         return False
-    return pwd_context.verify(plain, hashed)
+    try:
+        return pwd_context.verify(plain, hashed)
+    except Exception:
+        # 손상·알 수 없는 해시 형식 등 — 로그인 실패로 처리 (500 방지)
+        return False
 
 
 def create_access_token(

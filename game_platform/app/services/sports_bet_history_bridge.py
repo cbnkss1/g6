@@ -54,4 +54,5 @@ def sync_bet_history_after_sports_settle(
         hist.win_amount = Decimal("0")
     else:
         hist.game_result = "VOID"
-        hist.win_amount = Decimal("0")
+        # 적특·취소 시 원금 환불액 — 순손실·표시와 정합
+        hist.win_amount = bet.stake if (bet.stake is not None) else Decimal("0")

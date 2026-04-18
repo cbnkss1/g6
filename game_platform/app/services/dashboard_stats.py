@@ -1,7 +1,6 @@
 """금일 집계 (대시보드·WS 페이로드)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Collection, Dict, Optional, Union
 from uuid import UUID
@@ -11,14 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.models.bet import BetHistory
 from app.models.cash_request import CashRequest
-from app.models.enums import BetStatus, RollingPointLedgerReason
+from app.models.enums import BetStatus
 from app.models.ledger import RollingPointLedgerEntry
 from app.models.user import User
-
-
-def utc_day_start() -> datetime:
-    now = datetime.now(timezone.utc)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+from app.services.kst_time import kst_day_start_utc
+from app.services.total_revenue_service import ROLL_REASONS_ALL
 
 
 def get_today_totals(
@@ -28,7 +24,7 @@ def get_today_totals(
     super_admin: bool = False,
     scope_subtree_user_ids: Optional[Collection[int]] = None,
 ) -> Dict[str, Union[str, int]]:
-    start = utc_day_start()
+    start = kst_day_start_utc()
     settled_today = (
         BetHistory.status == BetStatus.SETTLED.value,
         BetHistory.settled_at.is_not(None),
@@ -58,8 +54,9 @@ def get_today_totals(
             User.site_id == site_id
         )
 
+    # `total_revenue_service` 와 동일: 레거시 추천 롤링 + 본인/차액 롤링 + 차액 루징(롤링포인트 원장)
     rolling_q = select(func.coalesce(func.sum(RollingPointLedgerEntry.delta), 0)).where(
-        RollingPointLedgerEntry.reason == RollingPointLedgerReason.REFERRAL_ROLLING.value,
+        RollingPointLedgerEntry.reason.in_(ROLL_REASONS_ALL),
         RollingPointLedgerEntry.created_at >= start,
     )
     if scope_subtree_user_ids is not None:
@@ -124,7 +121,7 @@ def get_cash_dashboard_metrics(
     scope_subtree_user_ids: Optional[Collection[int]] = None,
 ) -> Dict[str, Union[str, int]]:
     """입출금 대기 건수 + 금일 승인 합계 (대시보드·WS)."""
-    start = utc_day_start()
+    start = kst_day_start_utc()
     pend_dep = select(func.count()).select_from(CashRequest).where(
         CashRequest.request_type == "DEPOSIT",
         CashRequest.status.in_(("PENDING", "PROCESSING")),

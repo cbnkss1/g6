@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import jwt
 import uuid
+from datetime import date
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -56,6 +57,7 @@ from app.services.risk_engine import check_login_attempt, get_blocked_ips
 from app.services.player_presence import ACTIVE_SECONDS as PLAYER_PRESENCE_TTL_SEC
 from app.services.player_presence import list_player_presence_rows
 from app.services.settlement_reporting import get_rolling_settlement_lines
+from app.services.total_revenue_service import get_total_revenue_table
 from app.services.site_policy_service import (
     SiteCashPolicyError,
     assert_cash_request_allowed,
@@ -283,6 +285,31 @@ def admin_players_online(
         "count": len(rows),
         "ttl_sec": PLAYER_PRESENCE_TTL_SEC,
     }
+
+
+@router.get(
+    "/settlements/total-revenue-table",
+    summary="전체 수익 정산판 (직속 하부별, 기간·종목, KST 달력)",
+)
+def admin_settlements_total_revenue_table(
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    parent_id: int = Query(..., ge=1),
+    date_from: date = Query(..., description="시작일 (KST 달력)"),
+    date_to: date = Query(..., description="종료일 (KST 달력)"),
+    vertical: str = Query("all"),
+) -> Dict[str, Any]:
+    super_admin = user.role == USER_ROLE_SUPER_ADMIN
+    return get_total_revenue_table(
+        db,
+        admin=user,
+        parent_id=parent_id,
+        date_from=date_from,
+        date_to=date_to,
+        super_admin=super_admin,
+        site_id=None if super_admin else user.site_id,
+        vertical=vertical or "all",
+    )
 
 
 @router.get(
@@ -759,7 +786,12 @@ def list_user_rolling_rates(
     return {
         "user_id": user_id,
         "rates": [
-            {"game_type": r.game_type, "rate_percent": str(r.rate_percent)} for r in rows
+            {
+                "game_type": r.game_type,
+                "rolling_rate_percent": str(r.rolling_rate_percent),
+                "losing_rate_percent": str(r.losing_rate_percent),
+            }
+            for r in rows
         ],
     }
 
@@ -775,31 +807,54 @@ def replace_user_rolling_rates(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     assert_viewer_may_access_target_user(db, user, user_id)
+    if user.role not in (USER_ROLE_SUPER_ADMIN, USER_ROLE_OWNER, USER_ROLE_STAFF):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    _, can_edit_site = _viewer_member_ui_permissions(db, user, target.site_id)
+    if not _effective_can_edit_profile(user, target, can_edit_site):
+        if not can_edit_site:
+            raise HTTPException(
+                status_code=403,
+                detail="회원 상세 수정이 이 사이트에서 비활성화되어 있습니다.",
+            )
+        raise HTTPException(status_code=403, detail="플레이어 회원만 요율을 변경할 수 있습니다.")
 
     if user.role != USER_ROLE_SUPER_ADMIN and target.id != user.id:
         cap_rows = db.scalars(
             select(UserGameRollingRate).where(UserGameRollingRate.user_id == user.id)
         ).all()
-        caps = {r.game_type.strip().upper(): r.rate_percent for r in cap_rows}
+        cap_roll = {r.game_type.strip().upper(): Decimal(str(r.rolling_rate_percent)) for r in cap_rows}
+        cap_lose = {r.game_type.strip().upper(): Decimal(str(r.losing_rate_percent)) for r in cap_rows}
         for item in body.rates:
             gt = item.game_type.strip().upper()[:32]
-            cap = caps.get(gt, Decimal("0"))
-            val = Decimal(item.rate_percent).quantize(Decimal("0.0001"))
-            if val > cap:
+            roll = Decimal(item.rolling_rate_percent).quantize(Decimal("0.0001"))
+            lose = Decimal(item.losing_rate_percent).quantize(Decimal("0.0001"))
+            cr = cap_roll.get(gt, Decimal("0"))
+            cl = cap_lose.get(gt, Decimal("0"))
+            if roll > cr:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"하부 요율은 나의 요율({cap}%)을 초과할 수 없습니다 ({gt})"
+                        f"하부 롤링 요율은 나의 롤링({cr}%)을 초과할 수 없습니다 ({gt})"
+                    ),
+                )
+            if lose > cl:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"하부 루징 요율은 나의 루징({cl}%)을 초과할 수 없습니다 ({gt})"
                     ),
                 )
 
     db.execute(delete(UserGameRollingRate).where(UserGameRollingRate.user_id == user_id))
     for item in body.rates:
+        roll = Decimal(item.rolling_rate_percent).quantize(Decimal("0.0001"))
+        lose = Decimal(item.losing_rate_percent).quantize(Decimal("0.0001"))
         db.add(
             UserGameRollingRate(
                 user_id=user_id,
                 game_type=item.game_type.strip().upper()[:32],
-                rate_percent=Decimal(item.rate_percent).quantize(Decimal("0.0001")),
+                rolling_rate_percent=roll,
+                losing_rate_percent=lose,
             )
         )
     db.commit()

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MockSportsOddsPanel } from "@/components/MockSportsOddsPanel";
 import { SiteHeader } from "@/components/SiteHeader";
+import { formatPlayerMoney } from "@/lib/formatPlayerMoney";
 import { usePlayerAuth } from "@/lib/playerAuthContext";
 import {
   fetchSportsMatches,
@@ -99,7 +100,7 @@ function formatNowKst() {
 }
 
 function fmtMoney(v: string | number) {
-  return Number(v).toLocaleString("ko-KR");
+  return formatPlayerMoney(v);
 }
 
 /** 시작 시각 경과 여부 (브라우저 시계 기준, 서버와 이중 검증) */

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Collection, Dict, List, Optional, Tuple
 from uuid import UUID
@@ -14,18 +14,15 @@ from app.models.bet import BetHistory
 from app.models.enums import RollingPointLedgerReason
 from app.models.ledger import RollingPointLedgerEntry
 from app.models.user import User, UserGameRollingRate
+from app.services.kst_time import KST, kst_day_start_utc
 from app.services.settlement_basis import valid_bet_amount_for_rolling
-
-
-def utc_day_start() -> datetime:
-    now = datetime.now(timezone.utc)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 @dataclass(frozen=True)
 class RollingSettlementLine:
     ledger_id: int
     credited_at: datetime
+    ledger_reason: str
     referrer_login_id: str
     player_login_id: str
     game_type: str
@@ -41,6 +38,7 @@ class RollingSettlementLine:
         return {
             "ledger_id": self.ledger_id,
             "credited_at": self.credited_at.isoformat(),
+            "ledger_reason": self.ledger_reason,
             "referrer_login_id": self.referrer_login_id,
             "player_login_id": self.player_login_id,
             "game_type": self.game_type,
@@ -67,7 +65,7 @@ def _rate_map(
                 UserGameRollingRate.game_type == gt,
             )
         ).one_or_none()
-        out[(uid, gt)] = row.rate_percent if row else Decimal("0")
+        out[(uid, gt)] = row.rolling_rate_percent if row else Decimal("0")
     return out
 
 
@@ -79,7 +77,7 @@ def get_rolling_settlement_lines(
     day_start: Optional[datetime] = None,
     scope_subtree_user_ids: Optional[Collection[int]] = None,
 ) -> Dict[str, Any]:
-    start = day_start or utc_day_start()
+    start = day_start or kst_day_start_utc()
     Player = aliased(User)
     Referrer = aliased(User)
 
@@ -92,7 +90,14 @@ def get_rolling_settlement_lines(
         .join(Player, Player.id == BetHistory.user_id)
         .join(Referrer, Referrer.id == RollingPointLedgerEntry.user_id)
         .where(
-            RollingPointLedgerEntry.reason == RollingPointLedgerReason.REFERRAL_ROLLING.value,
+            RollingPointLedgerEntry.reason.in_(
+                (
+                    RollingPointLedgerReason.REFERRAL_ROLLING.value,
+                    RollingPointLedgerReason.SELF_ROLLING.value,
+                    RollingPointLedgerReason.DIFFERENTIAL_ROLLING.value,
+                    RollingPointLedgerReason.DIFFERENTIAL_LOSING.value,
+                )
+            ),
             RollingPointLedgerEntry.created_at >= start,
             RollingPointLedgerEntry.reference_type == "BET",
             RollingPointLedgerEntry.reference_id.isnot(None),
@@ -142,6 +147,7 @@ def get_rolling_settlement_lines(
             RollingSettlementLine(
                 ledger_id=r_ent.id,
                 credited_at=r_ent.created_at,
+                ledger_reason=r_ent.reason or "",
                 referrer_login_id=ref.login_id,
                 player_login_id=pl.login_id,
                 game_type=bet.game_type,
@@ -160,6 +166,8 @@ def get_rolling_settlement_lines(
 
     return {
         "day_start_utc": start.isoformat(),
+        "day_start_kst": start.astimezone(KST).isoformat(),
+        "timezone": "Asia/Seoul",
         "lines": [ln.as_dict() for ln in lines],
         "totals": {
             "total_bet_sum": str(sum_total.quantize(Decimal("0.000001"))),

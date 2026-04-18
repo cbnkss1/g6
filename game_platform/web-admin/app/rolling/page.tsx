@@ -7,7 +7,11 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 type MeApi = {
   user: { id: number; login_id: string; role: string };
-  my_rolling_rates: { game_type: string; rate_percent: string }[];
+  my_rolling_rates: {
+    game_type: string;
+    rolling_rate_percent: string;
+    losing_rate_percent: string;
+  }[];
 };
 
 type TreeNode = {
@@ -19,9 +23,15 @@ type TreeNode = {
   parent_id: number | null;
 };
 
+type RateRow = {
+  game_type: string;
+  rolling_rate_percent: string;
+  losing_rate_percent: string;
+};
+
 type RatesApi = {
   user_id: number;
-  rates: { game_type: string; rate_percent: string }[];
+  rates: RateRow[];
 };
 
 export default function RollingPage() {
@@ -29,7 +39,7 @@ export default function RollingPage() {
   const authUser = useAuthStore((s) => s.user);
   const qc = useQueryClient();
   const [targetUserId, setTargetUserId] = useState<number | "">("");
-  const [rows, setRows] = useState<{ game_type: string; rate_percent: string }[]>([]);
+  const [rows, setRows] = useState<RateRow[]>([]);
 
   const isSuper = authUser?.role === "super_admin";
 
@@ -66,10 +76,18 @@ export default function RollingPage() {
     enabled: Boolean(token && authUser?.id != null),
   });
 
-  const myCaps = useMemo(() => {
+  const myCapsRoll = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of meQ.data?.my_rolling_rates ?? []) {
-      m.set(r.game_type.toUpperCase(), r.rate_percent);
+      m.set(r.game_type.toUpperCase(), r.rolling_rate_percent);
+    }
+    return m;
+  }, [meQ.data]);
+
+  const myCapsLose = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of meQ.data?.my_rolling_rates ?? []) {
+      m.set(r.game_type.toUpperCase(), r.losing_rate_percent);
     }
     return m;
   }, [meQ.data]);
@@ -102,7 +120,8 @@ export default function RollingPage() {
       setRows(
         ratesQ.data.rates.map((x) => ({
           game_type: x.game_type,
-          rate_percent: x.rate_percent,
+          rolling_rate_percent: String(x.rolling_rate_percent ?? "0"),
+          losing_rate_percent: String(x.losing_rate_percent ?? "0"),
         })),
       );
     }
@@ -123,7 +142,8 @@ export default function RollingPage() {
           body: JSON.stringify({
             rates: rows.map((row) => ({
               game_type: row.game_type.trim().toUpperCase().slice(0, 32),
-              rate_percent: row.rate_percent,
+              rolling_rate_percent: row.rolling_rate_percent,
+              losing_rate_percent: row.losing_rate_percent,
             })),
           }),
         },
@@ -141,10 +161,17 @@ export default function RollingPage() {
   });
 
   function addRow() {
-    setRows((prev) => [...prev, { game_type: "", rate_percent: "0" }]);
+    setRows((prev) => [
+      ...prev,
+      { game_type: "", rolling_rate_percent: "0", losing_rate_percent: "0" },
+    ]);
   }
 
-  function updateRow(i: number, field: "game_type" | "rate_percent", v: string) {
+  function updateRow(
+    i: number,
+    field: keyof Pick<RateRow, "game_type" | "rolling_rate_percent" | "losing_rate_percent">,
+    v: string,
+  ) {
     setRows((prev) => {
       const next = [...prev];
       next[i] = { ...next[i], [field]: v };
@@ -180,7 +207,10 @@ export default function RollingPage() {
             <ul className="mt-2 space-y-1 text-sm text-premium-glow">
               {meQ.data.my_rolling_rates.map((r) => (
                 <li key={r.game_type}>
-                  {r.game_type}: <span className="tabular-nums">{r.rate_percent}%</span>
+                  {r.game_type}: 롤링{" "}
+                  <span className="tabular-nums">{r.rolling_rate_percent}%</span>
+                  {" · "}
+                  루징 <span className="tabular-nums">{r.losing_rate_percent}%</span>
                 </li>
               ))}
             </ul>
@@ -250,25 +280,28 @@ export default function RollingPage() {
           )}
 
           <div className="table-scroll rounded-xl border border-slate-800">
-            <table className="w-full min-w-[480px] text-left text-sm text-slate-300">
+            <table className="w-full min-w-[560px] text-left text-sm text-slate-300">
               <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="p-2">게임</th>
-                  <th className="p-2">요율 %</th>
-                  {!isSuper && <th className="p-2">내 한도</th>}
+                  <th className="p-2">롤링 %</th>
+                  <th className="p-2">루징 %</th>
+                  {!isSuper && <th className="p-2">내 한도 (롤/루)</th>}
                   <th className="p-2 w-16" />
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={isSuper ? 3 : 4} className="p-4 text-center text-slate-500">
-                    행 추가로 게임·요율을 입력하세요.
+                    <td colSpan={isSuper ? 4 : 5} className="p-4 text-center text-slate-500">
+                      행 추가로 게임·요율을 입력하세요.
                     </td>
                   </tr>
                 ) : (
                   rows.map((row, i) => {
-                    const cap = myCaps.get(row.game_type.toUpperCase()) ?? "0";
+                    const key = row.game_type.toUpperCase();
+                    const capR = myCapsRoll.get(key) ?? "0";
+                    const capL = myCapsLose.get(key) ?? "0";
                     return (
                       <tr key={i} className="border-b border-slate-800/60">
                         <td className="p-2">
@@ -282,12 +315,25 @@ export default function RollingPage() {
                         <td className="p-2">
                           <input
                             className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs tabular-nums"
-                            value={row.rate_percent}
-                            onChange={(e) => updateRow(i, "rate_percent", e.target.value)}
+                            value={row.rolling_rate_percent}
+                            onChange={(e) =>
+                              updateRow(i, "rolling_rate_percent", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs tabular-nums"
+                            value={row.losing_rate_percent}
+                            onChange={(e) =>
+                              updateRow(i, "losing_rate_percent", e.target.value)
+                            }
                           />
                         </td>
                         {!isSuper && (
-                          <td className="p-2 tabular-nums text-slate-500">{cap}%</td>
+                          <td className="p-2 tabular-nums text-slate-500">
+                            {capR}% / {capL}%
+                          </td>
                         )}
                         <td className="p-2">
                           <button

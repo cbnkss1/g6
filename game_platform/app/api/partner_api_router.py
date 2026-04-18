@@ -39,7 +39,14 @@ def api_me(
         select(UserGameRollingRate).where(UserGameRollingRate.user_id == user.id)
     ).all()
     my_rolling_rates: List[Dict[str, str]] = [
-        {"game_type": r.game_type, "rate_percent": str(r.rate_percent)} for r in rate_rows
+        {
+            "game_type": r.game_type,
+            "rolling_rate_percent": str(r.rolling_rate_percent),
+            "losing_rate_percent": str(r.losing_rate_percent),
+            # 하위 호환: 예전 필드명(롤링만)
+            "rate_percent": str(r.rolling_rate_percent),
+        }
+        for r in rate_rows
     ]
     return {
         "user": _user_public(db, user).model_dump(),

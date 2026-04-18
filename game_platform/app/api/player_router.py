@@ -363,6 +363,29 @@ def player_presence_heartbeat(
     return {"ok": True}
 
 
+class PlayerChangePasswordBody(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=256)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+@router.post("/password", summary="로그인 비밀번호 변경")
+def player_change_password(
+    body: PlayerChangePasswordBody,
+    user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    if user.role != USER_ROLE_PLAYER:
+        raise HTTPException(status_code=403, detail="플레이어 전용입니다.")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
+    if not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
+    user.hashed_password = hash_password(body.new_password[:72])
+    db.add(user)
+    db.commit()
+    return {"ok": True}
+
+
 class PlayerCashRequestBody(BaseModel):
     request_type: str = Field(..., description="DEPOSIT 또는 WITHDRAW")
     amount: str = Field(..., min_length=1, max_length=32)

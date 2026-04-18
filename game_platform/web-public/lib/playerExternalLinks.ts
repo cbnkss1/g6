@@ -17,3 +17,13 @@ export function playerMemoUrl(): string | null {
 export function playerAdminWebUrl(): string | null {
   return trimUrl(process.env.NEXT_PUBLIC_ADMIN_WEB_URL);
 }
+
+/** 고객센터 링크: 외부 URL이 없으면 사이트 내 `/support`. */
+export function playerSupportHref(): string {
+  return playerSupportUrl() ?? "/support";
+}
+
+/** `NEXT_PUBLIC_PLAYER_SUPPORT_URL` 이 있으면 외부 고객센터(새 탭), 없으면 내부 페이지. */
+export function playerSupportIsExternal(): boolean {
+  return Boolean(trimUrl(process.env.NEXT_PUBLIC_PLAYER_SUPPORT_URL));
+}

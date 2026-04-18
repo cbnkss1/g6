@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, useCallback } from "react";
+import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -34,7 +35,7 @@ type Modal =
 const DEPTH_COLORS = ["#d4af37", "#60a5fa", "#34d399", "#a78bfa", "#f87171", "#fb923c"];
 
 function fmtMoney(v: string | number) {
-  return Number(v).toLocaleString("ko-KR");
+  return formatMoneyInt(v);
 }
 
 // ─── 하위 트리 행 (재귀 확장) ─────────────────────────────────────────────────

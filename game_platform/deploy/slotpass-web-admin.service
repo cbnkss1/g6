@@ -1,0 +1,18 @@
+[Unit]
+Description=game_platform web-admin Next.js (어드민 test.slotpass.net → 포트 3000)
+After=network.target
+
+[Service]
+Type=simple
+User=boss
+Group=boss
+WorkingDirectory=/var/www/html/v6/game_platform/web-admin
+Environment=NODE_ENV=production
+# nvm 기본 경로 — Node 업그레이드 시 아래 PATH의 버전 디렉터리만 맞추면 됩니다.
+Environment=PATH=/home/boss/.nvm/versions/node/v20.20.2/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/boss/.nvm/versions/node/v20.20.2/bin/npm run start
+Restart=always
+RestartSec=4
+
+[Install]
+WantedBy=multi-user.target

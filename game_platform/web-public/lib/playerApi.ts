@@ -177,3 +177,175 @@ export async function playerCreateCashRequest(
   if (!r.ok) throw new Error(readErr(r, data));
   return data as CashRequestPublic;
 }
+
+export type PlayerNotificationItem = {
+  id: number;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string | null;
+};
+
+/** 관리자가 보낸 쪽지(알림) 목록 */
+export async function playerListNotifications(
+  token: string,
+  limit = 100,
+): Promise<{ items: PlayerNotificationItem[] }> {
+  const r = await fetch(`${base()}/api/player/notifications?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { items: PlayerNotificationItem[] };
+}
+
+export async function playerMarkNotificationRead(token: string, notificationId: number): Promise<void> {
+  const r = await fetch(`${base()}/api/player/notifications/${notificationId}/read`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+}
+
+export type LedgerEntryPublic = {
+  id: number;
+  delta: string;
+  balance_after: string;
+  reason_label: string;
+  created_at: string | null;
+};
+
+export async function playerListGameMoneyLedger(
+  token: string,
+  limit = 40,
+  offset = 0,
+): Promise<{ items: LedgerEntryPublic[] }> {
+  const q = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const r = await fetch(`${base()}/api/player/ledger/game-money?${q}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { items: LedgerEntryPublic[] };
+}
+
+export async function playerListRollingLedger(
+  token: string,
+  limit = 40,
+  offset = 0,
+): Promise<{ items: LedgerEntryPublic[] }> {
+  const q = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const r = await fetch(`${base()}/api/player/ledger/rolling-point?${q}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { items: LedgerEntryPublic[] };
+}
+
+export async function playerChangePassword(
+  token: string,
+  body: { current_password: string; new_password: string },
+): Promise<void> {
+  const r = await fetch(`${base()}/api/player/password`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+}
+
+export type SupportTicketPublic = {
+  id: number;
+  category: string;
+  title: string;
+  body: string;
+  attached_bet_ids: number[];
+  status: string;
+  admin_reply: string | null;
+  replied_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type SupportBetRow = {
+  id: number;
+  external_bet_uid: string | null;
+  game_type: string;
+  bet_amount: string;
+  win_amount: string | null;
+  status: string;
+  game_result: string | null;
+  created_at: string | null;
+  link_line: string;
+};
+
+export async function playerSupportListTickets(
+  token: string,
+  limit = 40,
+): Promise<{ items: SupportTicketPublic[] }> {
+  const r = await fetch(`${base()}/api/player/support/tickets?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { items: SupportTicketPublic[] };
+}
+
+export async function playerSupportRecentBets(
+  token: string,
+  limit = 40,
+): Promise<{ items: SupportBetRow[] }> {
+  const r = await fetch(`${base()}/api/player/support/bets/recent?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { items: SupportBetRow[] };
+}
+
+export async function playerSupportCreateTicket(
+  token: string,
+  body: {
+    category: string;
+    title: string;
+    body: string;
+    attached_bet_ids?: number[];
+  },
+): Promise<SupportTicketPublic> {
+  const r = await fetch(`${base()}/api/player/support/tickets`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      category: body.category,
+      title: body.title,
+      body: body.body,
+      attached_bet_ids: body.attached_bet_ids ?? [],
+    }),
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as SupportTicketPublic;
+}

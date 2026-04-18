@@ -192,3 +192,22 @@ body {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(212,175,55,0.3), transparent);
 }
+
+/* ─── 회원 상세: 카드·입력 가독성 (과한 블랙 완화) ───────────────────────── */
+.member-detail-shell .member-profile-card {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.member-detail-shell .member-input,
+.member-detail-shell .member-profile-card .admin-touch-input {
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  background-color: rgba(30, 41, 59, 0.88) !important;
+  color: #f1f5f9 !important;
+}
+.member-detail-shell .member-profile-card .text-slate-600 {
+  color: rgb(148 163 184) !important;
+}

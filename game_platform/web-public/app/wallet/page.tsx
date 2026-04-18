@@ -10,6 +10,7 @@ import {
   playerListCashRequests,
   type CashRequestPublic,
 } from "@/lib/playerApi";
+import { formatPlayerMoney } from "@/lib/formatPlayerMoney";
 import { playerAdminWebUrl, playerMemoUrl, playerSupportUrl } from "@/lib/playerExternalLinks";
 
 export default function WalletPage() {
@@ -102,7 +103,7 @@ export default function WalletPage() {
                   게임머니
                 </p>
                 <p className="mt-1 font-mono text-lg text-premium-glow">
-                  {user.game_money_balance ?? "—"}
+                  {formatPlayerMoney(user.game_money_balance)}
                 </p>
               </div>
               <div>
@@ -110,7 +111,7 @@ export default function WalletPage() {
                   롤링 포인트
                 </p>
                 <p className="mt-1 font-mono text-lg text-slate-300">
-                  {user.rolling_point_balance ?? "—"}
+                  {formatPlayerMoney(user.rolling_point_balance)}
                 </p>
               </div>
             </div>

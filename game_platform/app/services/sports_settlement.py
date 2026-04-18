@@ -15,8 +15,7 @@ SLOTPASS 스포츠 토토 듀얼 정산 엔진.
 
 공통 로직
   - 타이(TIE) / 적특(VOID): 유효배팅 0 → 롤링 없음
-  - 롤링: 배팅 회원 본인의 SPORTS 요율이 임계값 이상이면 추천인(upline)에게 지급 (역할 무관, 동일 회원 모델)
-  - R-스냅샷: SettlementSnapshot 에 요율·유효배팅·지급액 저장
+  - 롤링·루징: `DifferentialCommissionService` (본인·차액 롤링 + 차액 루징), `gp_bet_history` id 기준 스냅샷
   - AuditService 에 "SPORTS_SETTLE" 기록
 """
 from __future__ import annotations
@@ -30,11 +29,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.settlement_snapshot import SettlementSnapshot
+from app.models.bet import BetHistory
 from app.models.sports import SportsBet, SportsMatch, SportsSlip, SportsTx
-from app.models.user import User, UserGameRollingRate
+from app.models.user import User
 from app.services.audit_service import AuditService
-from app.services.partner_utils import rolling_rate_qualifies_for_upline
+from app.services.differential_commission_service import DifferentialCommissionService
+from app.services.settlement_basis import valid_bet_amount_for_rolling
 from app.services.sports_bet_history_bridge import sync_bet_history_after_sports_settle
 from app.services.sports_market_codes import (
     is_known_extended_outcome,
@@ -140,16 +140,6 @@ def _determine_bet_outcome(slips: List[SportsSlip]) -> Tuple[str, Decimal]:
 
 # ─── 롤링 산정 ────────────────────────────────────────────────────────────────
 
-def _get_sports_rolling_rate(db: Session, user_id: int) -> Decimal:
-    row = db.scalars(
-        select(UserGameRollingRate).where(
-            UserGameRollingRate.user_id == user_id,
-            UserGameRollingRate.game_type == GAME_TYPE_SPORTS,
-        )
-    ).one_or_none()
-    return row.rate_percent if row else Decimal("0")
-
-
 # ─── 자금 처리 헬퍼 ───────────────────────────────────────────────────────────
 
 def _credit_user(db: Session, user: User, amount: Decimal, bet_id: int, tx_type: str, note: str) -> SportsTx:
@@ -159,39 +149,6 @@ def _credit_user(db: Session, user: User, amount: Decimal, bet_id: int, tx_type:
                   amount=amount.quantize(Q), balance_after=new_bal, note=note)
     db.add(tx)
     return tx
-
-
-def _credit_rolling(db: Session, referrer: User, amount: Decimal, bet_id: int) -> SportsTx:
-    new_r = (referrer.rolling_point_balance + amount).quantize(Q)
-    referrer.rolling_point_balance = new_r
-    tx = SportsTx(user_id=referrer.id, bet_id=bet_id, tx_type="ROLLING_CREDIT",
-                  amount=amount.quantize(Q), balance_after=new_r,
-                  note=f"sports rolling from bet#{bet_id}")
-    db.add(tx)
-    return tx
-
-
-def _add_snapshot(db: Session, *, partner_user_id: int, source_user_id: int,
-                  bet_id: int, rate_percent: Decimal,
-                  valid_bet: Decimal, rolling: Decimal, batch_key: Optional[str] = None) -> None:
-    db.add(SettlementSnapshot(
-        partner_user_id=partner_user_id,
-        source_user_id=source_user_id,
-        bet_id=None,  # sports bet id는 별도 테이블 — note에 기록
-        game_type=GAME_TYPE_SPORTS,
-        rate_percent_at_settlement=rate_percent,
-        valid_bet_amount=valid_bet.quantize(Q),
-        rolling_credited=rolling.quantize(Q),
-        settlement_batch_key=batch_key,
-        note=f"sports_bet#{bet_id}",
-    ))
-
-
-# ─── SettlementSnapshot 은 note 컬럼이 없으므로 패치 ─────────────────────────
-# (기존 모델에 note 없음 → 안전하게 skip)
-def _safe_snapshot(db, **kw):
-    kw.pop("note", None)
-    db.add(SettlementSnapshot(**kw))
 
 
 # ─── 핵심: 단일 배팅 정산 ─────────────────────────────────────────────────────
@@ -254,39 +211,26 @@ def _settle_one_bet(
     win_amount = Decimal("0")
     rolling = Decimal("0")
     valid_bet = Decimal("0")
+    win_paid_for_net = Decimal("0")
+    game_result_for_rolling = "LOSE"
 
     if final_status == "WON":
         win_amount = (bet.stake * eff_odds).quantize(Q)
         valid_bet = bet.stake
+        win_paid_for_net = win_amount
+        game_result_for_rolling = "WIN"
         _credit_user(db, user, win_amount, bet.id, "WIN_PAYOUT",
                      f"sports bet#{bet.id} WON odds={eff_odds}")
     elif final_status == "LOST":
-        valid_bet = bet.stake  # 유효배팅 — 롤링 산정
+        valid_bet = bet.stake
+        win_paid_for_net = Decimal("0")
+        game_result_for_rolling = "LOSE"
     elif final_status == "VOIDED":
-        # 전체 적특: 원금 환불
+        win_paid_for_net = bet.stake
+        game_result_for_rolling = "VOID"
         _credit_user(db, user, bet.stake, bet.id, "VOID_REFUND",
                      f"sports bet#{bet.id} VOIDED refund={bet.stake}")
     # 개별 TIE는 슬립 레벨에서 1.0배 처리됨
-
-    # ── 롤링 산정 (WON/LOST 유효배팅 있을 때만) ─────────────────────────────
-    if valid_bet > 0 and user.referrer_id:
-        rate = _get_sports_rolling_rate(db, user.id)
-        if rolling_rate_qualifies_for_upline(rate):
-            referrer = db.scalars(
-                select(User).where(User.id == user.referrer_id).with_for_update()
-            ).one()
-            rolling = (valid_bet * rate / Decimal("100")).quantize(Q)
-            _credit_rolling(db, referrer, rolling, bet.id)
-            _safe_snapshot(db,
-                partner_user_id=referrer.id,
-                source_user_id=user.id,
-                bet_id=None,
-                game_type=GAME_TYPE_SPORTS,
-                rate_percent_at_settlement=rate,
-                valid_bet_amount=valid_bet.quantize(Q),
-                rolling_credited=rolling,
-                settlement_batch_key=batch_key,
-            )
 
     bet.status = final_status
     bet.win_amount = win_amount
@@ -294,6 +238,24 @@ def _settle_one_bet(
 
     if final_status in ("WON", "LOST", "VOIDED", "CANCELLED"):
         sync_bet_history_after_sports_settle(db, bet, settled_at=now)
+        hist = db.scalar(
+            select(BetHistory).where(BetHistory.external_bet_uid == f"gp_sp_{bet.id}").with_for_update()
+        )
+        if hist is not None:
+            vb = valid_bet_amount_for_rolling(bet.stake, game_result_for_rolling)
+            diff = DifferentialCommissionService.apply(
+                db,
+                bettor_user_id=user.id,
+                game_type=GAME_TYPE_SPORTS,
+                valid_stake_for_rolling=vb,
+                stake_amount=bet.stake,
+                win_amount=win_paid_for_net,
+                bet_history_id=hist.id,
+                ledger_reference_type="BET",
+                ledger_reference_id=str(hist.id),
+                game_result=game_result_for_rolling,
+            )
+            rolling = diff.total_rolling_points
 
     return BetSettleResult(
         bet_id=bet.id, status=final_status,

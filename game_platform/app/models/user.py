@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from app.models.base import Base
 
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.cash_request import CashRequest
     from app.models.ledger import GameMoneyLedgerEntry, RollingPointLedgerEntry
     from app.models.site_config import SiteConfig
+    from app.models.support_ticket import SupportTicket
 
 
 class User(Base):
@@ -110,6 +111,15 @@ class User(Base):
         foreign_keys="CashRequest.user_id",
         back_populates="user",
     )
+    @declared_attr
+    def support_tickets(cls) -> Mapped[List["SupportTicket"]]:
+        from app.models.support_ticket import SupportTicket
+
+        return relationship(
+            SupportTicket,
+            foreign_keys=[SupportTicket.user_id],
+            back_populates="user",
+        )
 
     site: Mapped["SiteConfig"] = relationship(back_populates="users")
 
@@ -117,7 +127,8 @@ class User(Base):
 class UserGameRollingRate(Base):
     """
     배팅 유저 기준: (유저, 게임 종류)마다 추천인에게 지급할 롤링 비율(%).
-    적립액 = 배팅금액 * (rate_percent / 100) — 정산 서비스에서 사용.
+    적립액 = 배팅금액 * (rolling_rate_percent / 100) — 정산 서비스에서 사용.
+    losing_rate_percent: 차액 정산(루징) 쪽 비율(0017 마이그레이션 컬럼명과 동일).
     """
 
     __tablename__ = "gp_user_game_rolling_rates"
@@ -126,6 +137,7 @@ class UserGameRollingRate(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("gp_users.id", ondelete="CASCADE"), index=True)
     game_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    rate_percent: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    rolling_rate_percent: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    losing_rate_percent: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
 
     user: Mapped[User] = relationship(back_populates="rolling_rates")

@@ -14,7 +14,7 @@ from app.constants import USER_ROLE_PLAYER
 from app.core.config import settings
 from app.core.database import get_db
 from app.dependencies.auth_jwt import get_current_user_from_token
-from app.models.powerball import PowerballBet, PowerballRound
+from app.models.powerball import PowerballBet, PowerballGameState, PowerballRound
 from app.models.site_config import SiteConfig
 from app.models.sports import SportsBet, SportsMatch, SportsSlip, SportsTx
 from app.models.user import User
@@ -28,6 +28,7 @@ from app.services.game_provider_policy import (
     merged_provider_flags,
 )
 from app.services.powerball_service import (
+    POWERBALL_SMALL_ROUND_CEIL,
     VALID_PICKS,
     configured_powerball_game_keys,
     get_next_round,
@@ -37,7 +38,6 @@ from app.services.powerball_service import (
     powerball_games_catalog,
     validate_pick_string,
 )
-
 router = APIRouter()
 
 
@@ -147,13 +147,14 @@ def player_powerball_overview(
         raise HTTPException(status_code=400, detail=f"지원하지 않는 game_key: {gk}")
     next_r = get_next_round(db, gk)
     lim = max(10, min(int(recent_limit or 288), 400))
+    st_row = db.get(PowerballGameState, gk)
+    api_last = int(st_row.last_api_round or 0) if st_row is not None else 0
+    stmt = select(PowerballRound).where(PowerballRound.game_key == gk)
+    # 작은 std_round 모드일 때는 DB에 남은 YYYYMMDD+ 레거시 결과를 목록에서 제외(표시·프론트 회차 보정 오류 방지)
+    if 0 < api_last < POWERBALL_SMALL_ROUND_CEIL:
+        stmt = stmt.where(PowerballRound.round_no < POWERBALL_SMALL_ROUND_CEIL)
     recent = list(
-        db.scalars(
-            select(PowerballRound)
-            .where(PowerballRound.game_key == gk)
-            .order_by(desc(PowerballRound.round_no))
-            .limit(lim)
-        ).all()
+        db.scalars(stmt.order_by(desc(PowerballRound.round_no)).limit(lim)).all()
     )
     odds_map = merged_powerball_odds_map(db, user.site_id)
     odds_by_pick = {k: str(v) for k, v in sorted(odds_map.items())}

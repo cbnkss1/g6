@@ -26,6 +26,19 @@ REFUND_LIKE_RESULTS: FrozenSet[str] = frozenset(
 # 실제 승패 확정 — 스테이크 전액이 유효 배팅으로 간주
 DECISIVE_RESULTS: FrozenSet[str] = frozenset({"WIN", "LOSE"})
 
+# 카지노·스포츠·파워볼 등: 타이/적특(환불형)이면 롤링 스테이크 0 — `differential_commission_service`와 동일 집합
+# 미니게임(`MINIGAME_GENERIC` 등)은 호출부에서 유효 스테이크를 산정하므로 제외
+CASINO_OR_SPORTS_ROLLING: FrozenSet[str] = frozenset(
+    {
+        "BACCARAT",
+        "CASINO",
+        "LIVE_CASINO",
+        "SLOT",
+        "SPORTS",
+        "POWERBALL",
+    }
+)
+
 
 def normalize_game_result(value: Optional[str]) -> Optional[str]:
     if value is None:

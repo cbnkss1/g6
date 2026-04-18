@@ -22,7 +22,7 @@ def user_is_partner(db: Session, user_id: int) -> bool:
         .select_from(UserGameRollingRate)
         .where(
             UserGameRollingRate.user_id == user_id,
-            UserGameRollingRate.rate_percent >= MIN_PARTNER_ROLLING_PERCENT,
+            UserGameRollingRate.rolling_rate_percent >= MIN_PARTNER_ROLLING_PERCENT,
         )
     )
     return int(n or 0) > 0

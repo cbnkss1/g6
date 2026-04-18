@@ -105,15 +105,8 @@ function resolveNextRound(ov: PowerballOverview | null, selectedGameKey: string)
       server = Math.max(1, Math.floor(Number(hit.next_round)));
     }
   }
-  const rounds = ov?.recent_rounds ?? [];
-  let maxR = 0;
-  for (const r of rounds) {
-    const n = Math.floor(Number(r.round_no));
-    if (Number.isFinite(n) && n > maxR) maxR = n;
-  }
-  if (maxR > 0) {
-    return Math.max(server, maxR + 1);
-  }
+  // 배팅 회차는 gp-api `get_next_round` 단일 기준. recent_rounds 에 남은 레거시(YYYYMMDD+ 거대 번호)로
+  // max+1 을 올리면 표시만 20260418462 처럼 깨짐 — 서버 값만 사용.
   return server;
 }
 

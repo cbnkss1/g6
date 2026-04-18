@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { MemberWalletAdjustDialog } from "@/components/admin/MemberWalletAdjustDialog";
 import { adminFetch } from "@/lib/adminFetch";
+import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -33,8 +34,7 @@ const ROLE_KO: Record<string, string> = {
 };
 
 function fmtMoney(v: string) {
-  const n = Number(v);
-  return Number.isNaN(n) ? v : n.toLocaleString("ko-KR");
+  return formatMoneyInt(v);
 }
 
 type Props = {

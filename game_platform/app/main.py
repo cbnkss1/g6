@@ -8,7 +8,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.admin_player_notify_router import router as admin_player_notify_router
 from app.api.admin_router import router as admin_router
+from app.api.admin_site_popup_router import router as admin_site_popup_router
+from app.api.admin_support_router import router as admin_support_router
 from app.api.agent_router import router as agent_router
 from app.api.auth_router import router as auth_router
 from app.api.internal_router import router as internal_router
@@ -16,7 +19,11 @@ from app.api.partner_api_router import router as partner_api_router
 from app.api.partner_router import router as partner_mgmt_router
 from app.api.mock_odds_router import router as mock_odds_router
 from app.api.player_games_router import router as player_games_router
+from app.api.player_ledger_router import router as player_ledger_router
+from app.api.player_notifications_api import router as player_notifications_router
 from app.api.player_router import router as player_router
+from app.api.player_support_router import router as player_support_router
+from app.api.public_site_router import router as public_site_router
 from app.api.powerball_router import router as powerball_router
 from app.api.sports_router import router as sports_router
 from app.api.toto_router import router as toto_router
@@ -74,6 +81,9 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/admin", tags=["auth"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
+app.include_router(admin_player_notify_router, prefix="/admin", tags=["admin-notify"])
+app.include_router(admin_site_popup_router, prefix="/admin", tags=["admin-popups"])
+app.include_router(admin_support_router, prefix="/admin", tags=["admin-support"])
 app.include_router(toto_router, prefix="/admin", tags=["admin-features"])
 app.include_router(sports_router, prefix="/admin", tags=["sports"])
 app.include_router(powerball_router, prefix="/admin", tags=["powerball"])
@@ -82,7 +92,11 @@ app.include_router(internal_router, prefix="/internal", tags=["internal"])
 app.include_router(agent_router, prefix="/api/agent", tags=["agent"])
 app.include_router(mock_odds_router, prefix="/api", tags=["mock-odds"])
 app.include_router(partner_api_router, prefix="/api", tags=["partner-api"])
+app.include_router(public_site_router, prefix="/api/public", tags=["public"])
 app.include_router(player_router, prefix="/api/player", tags=["player"])
+app.include_router(player_ledger_router, prefix="/api/player", tags=["player-ledger"])
+app.include_router(player_notifications_router, prefix="/api/player", tags=["player"])
+app.include_router(player_support_router, prefix="/api/player", tags=["player-support"])
 app.include_router(player_games_router, prefix="/api/player", tags=["player-games"])
 
 

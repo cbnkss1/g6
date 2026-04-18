@@ -142,15 +142,26 @@ def internal_bootstrap_demo(db: Session = Depends(get_db)) -> Dict[str, Any]:
     for p in players:
         db.add(
             UserGameRollingRate(
-                user_id=p.id, game_type="BACCARAT", rate_percent=Decimal("1.25")
+                user_id=p.id,
+                game_type="BACCARAT",
+                rolling_rate_percent=Decimal("1.25"),
+                losing_rate_percent=Decimal("0"),
             )
         )
         db.add(
-            UserGameRollingRate(user_id=p.id, game_type="SLOT", rate_percent=Decimal("0.80"))
+            UserGameRollingRate(
+                user_id=p.id,
+                game_type="SLOT",
+                rolling_rate_percent=Decimal("0.80"),
+                losing_rate_percent=Decimal("0"),
+            )
         )
         db.add(
             UserGameRollingRate(
-                user_id=p.id, game_type="POWERBALL", rate_percent=Decimal("0.50")
+                user_id=p.id,
+                game_type="POWERBALL",
+                rolling_rate_percent=Decimal("0.50"),
+                losing_rate_percent=Decimal("0"),
             )
         )
 

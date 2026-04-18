@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 class RollingRateItem(BaseModel):
     game_type: str = Field(..., max_length=32)
-    rate_percent: Decimal = Field(..., ge=0)
+    rolling_rate_percent: Decimal = Field(default=Decimal("0"), ge=0, description="롤링 %")
+    losing_rate_percent: Decimal = Field(default=Decimal("0"), ge=0, description="루징 % (차액 정산)")
 
 
 class RollingRatesUpdateBody(BaseModel):

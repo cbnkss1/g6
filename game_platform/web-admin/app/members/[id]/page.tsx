@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { MemberRollingRatesPanel } from "@/components/admin/MemberRollingRatesPanel";
 import { MemberWalletAdjustDialog } from "@/components/admin/MemberWalletAdjustDialog";
 import { adminFetch } from "@/lib/adminFetch";
+import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -54,8 +56,7 @@ const ROLE_KO: Record<string, string> = {
 };
 
 function fmtMoney(v: string) {
-  const n = Number(v);
-  return Number.isNaN(n) ? v : n.toLocaleString("ko-KR");
+  return formatMoneyInt(v);
 }
 
 function profileToDraft(p: Profile): Draft {
@@ -151,7 +152,7 @@ export default function MemberDetailPage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-up">
+    <div className="member-detail-shell space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -170,12 +171,12 @@ export default function MemberDetailPage() {
           <div>
             <p className="text-premium-label">회원 상세</p>
             <h1
-              className="mt-1 text-2xl font-semibold text-slate-100"
+              className="mt-1 text-2xl font-semibold text-slate-50"
               style={{ fontFamily: "'Cormorant Garamond', serif" }}
             >
               {u.login_id}
             </h1>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-1 text-xs text-slate-400">
               직속 상위는 <code className="text-slate-500">referrer_id</code> 한 단계입니다. 열 이름·라벨은{" "}
               <Link href="/settings/site-policy" className="text-premium hover:underline">
                 사이트 운영 정책
@@ -187,14 +188,14 @@ export default function MemberDetailPage() {
             </p>
           </div>
 
-          <div className="glass-card-sm grid gap-4 p-5 sm:grid-cols-2">
+          <div className="member-profile-card grid gap-4 p-5 sm:grid-cols-2">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-slate-600">표시명</p>
               {canEdit ? (
                 <input
                   value={draft.display_name}
                   onChange={(e) => setDraft((d) => (d ? { ...d, display_name: e.target.value } : d))}
-                  className="admin-touch-input mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100"
+                  className="admin-touch-input member-input mt-1 w-full rounded-xl border px-3 py-2 text-sm"
                 />
               ) : (
                 <p className="mt-1 text-slate-200">{u.display_name ?? "—"}</p>
@@ -217,7 +218,7 @@ export default function MemberDetailPage() {
                   max={99}
                   value={draft.member_level}
                   onChange={(e) => setDraft((d) => (d ? { ...d, member_level: e.target.value } : d))}
-                  className="admin-touch-input mt-1 w-full max-w-[120px] rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 font-mono text-sm text-slate-100"
+                  className="admin-touch-input member-input mt-1 w-full max-w-[120px] rounded-xl border px-3 py-2 font-mono text-sm"
                   title={u.role !== "player" ? "비플레이어 LV는 슈퍼만 API에서 허용" : undefined}
                 />
               ) : (
@@ -238,7 +239,7 @@ export default function MemberDetailPage() {
                 <input
                   value={draft.phone}
                   onChange={(e) => setDraft((d) => (d ? { ...d, phone: e.target.value } : d))}
-                  className="admin-touch-input mt-1 w-full font-mono text-sm text-slate-100"
+                  className="admin-touch-input member-input mt-1 w-full font-mono text-sm"
                 />
               ) : (
                 <p className="mt-1 font-mono text-sm text-slate-400">{u.phone ?? "—"}</p>
@@ -250,7 +251,7 @@ export default function MemberDetailPage() {
                 <input
                   value={draft.telegram_id}
                   onChange={(e) => setDraft((d) => (d ? { ...d, telegram_id: e.target.value } : d))}
-                  className="admin-touch-input mt-1 w-full font-mono text-sm text-slate-100"
+                  className="admin-touch-input member-input mt-1 w-full font-mono text-sm"
                 />
               ) : (
                 <p className="mt-1 font-mono text-sm text-slate-400">{u.telegram_id ?? "—"}</p>
@@ -264,19 +265,19 @@ export default function MemberDetailPage() {
                     placeholder="은행"
                     value={draft.bank_name}
                     onChange={(e) => setDraft((d) => (d ? { ...d, bank_name: e.target.value } : d))}
-                    className="admin-touch-input rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100"
+                    className="admin-touch-input member-input rounded-xl border px-3 py-2 text-sm"
                   />
                   <input
                     placeholder="계좌번호"
                     value={draft.bank_account}
                     onChange={(e) => setDraft((d) => (d ? { ...d, bank_account: e.target.value } : d))}
-                    className="admin-touch-input rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 font-mono text-sm text-slate-100"
+                    className="admin-touch-input member-input rounded-xl border px-3 py-2 font-mono text-sm"
                   />
                   <input
                     placeholder="예금주"
                     value={draft.account_holder}
                     onChange={(e) => setDraft((d) => (d ? { ...d, account_holder: e.target.value } : d))}
-                    className="admin-touch-input rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100"
+                    className="admin-touch-input member-input rounded-xl border px-3 py-2 text-sm"
                   />
                 </div>
               ) : (
@@ -308,6 +309,8 @@ export default function MemberDetailPage() {
               )}
             </div>
           </div>
+
+          <MemberRollingRatesPanel userId={id} variant="memberDetail" />
 
           {canEdit ? (
             <div className="flex flex-wrap items-center gap-3">

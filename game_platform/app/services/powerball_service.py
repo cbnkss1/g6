@@ -23,8 +23,36 @@ from app.models.powerball import PowerballBet, PowerballGameState, PowerballRoun
 from app.models.site_config import SiteConfig
 from app.models.user import User
 from app.services.bet_limit_service import effective_limits
+from app.services.differential_commission_service import DifferentialCommissionService
+from app.services.settlement_basis import valid_bet_amount_for_rolling
 
 Q = Decimal("0.000001")
+
+
+def _apply_powerball_differential_commission(db: Session, bet: PowerballBet) -> None:
+    """통합 배팅 로그 기준 차액 롤링·루징 (배팅 1건)."""
+    ext = f"gp_pb_{bet.id}"
+    hist = db.scalar(
+        select(BetHistory).where(BetHistory.external_bet_uid == ext).with_for_update()
+    )
+    if hist is None:
+        return
+    win_amt = hist.win_amount or Decimal("0")
+    gr = hist.game_result
+    vb = valid_bet_amount_for_rolling(bet.amount, gr)
+    DifferentialCommissionService.apply(
+        db,
+        bettor_user_id=bet.user_id,
+        game_type=GameType.POWERBALL.value,
+        valid_stake_for_rolling=vb,
+        stake_amount=bet.amount,
+        win_amount=win_amt,
+        bet_history_id=hist.id,
+        ledger_reference_type="BET",
+        ledger_reference_id=str(hist.id),
+        game_result=gr,
+    )
+
 
 # v6 bbs/game_powerball_live._POWERBALL_LIVE_IFRAME_BY_KEY 와 동기
 _POWERBALL_LIVE_IFRAME_BY_KEY: dict[str, str] = {
@@ -153,15 +181,28 @@ def _ensure_game_state(db: Session, game_key: str) -> PowerballGameState:
     return st
 
 
+# 피드 `std_round` 가 일·회차용 작은 정수(< 이 값)인 경우와, 예전 YYYYMMDD+ 대형 회차 번호가 공존할 때 구분
+_SMALL_STD_ROUND_CEIL = 100_000_000
+POWERBALL_SMALL_ROUND_CEIL = _SMALL_STD_ROUND_CEIL
+
+
 def get_next_round(db: Session, game_key: str) -> int:
-    """다음 배팅 회차. API `last_api_round+1` 과 DB `max(round_no)+1` 중 큰 값을 쓰면,
-    피드만 앞서가거나 반대로 DB에만 결과가 쌓인 경우에도 표시·배팅 회차가 어긋나지 않습니다."""
+    """다음 배팅 회차.
+
+    - API가 `std_round` 를 작은 정수로 주는 모드: `last_api_round+1` 을 우선(레거시 대형 round_no 행과 max 충돌 방지).
+    - 그 외(구 YYYYMMDD+ 체계): 기존처럼 ``max(DB 결과 회차)+1`` 과 ``last_api_round+1`` 중 큰 값.
+    """
     gk = game_key.strip()
     st = _ensure_game_state(db, gk)
+    api_last = int(st.last_api_round or 0)
+
+    if 0 < api_last < _SMALL_STD_ROUND_CEIL:
+        return api_last + 1
+
     m = db.scalar(select(func.max(PowerballRound.round_no)).where(PowerballRound.game_key == gk))
     from_db = int(m) + 1 if m is not None else 1
-    if st.last_api_round and int(st.last_api_round) > 0:
-        from_api = int(st.last_api_round) + 1
+    if api_last > 0:
+        from_api = api_last + 1
         return max(from_api, from_db)
     return from_db
 
@@ -256,6 +297,7 @@ def settle_round(db: Session, game_key: str, round_no: int, sum_val: int, powerb
             bet.payout = Decimal("0")
             bet.settled_at = now
             _sync_powerball_bet_history_settled(db, bet, now)
+            _apply_powerball_differential_commission(db, bet)
             continue
         all_win = all(is_pick_win(p, sum_val, powerball) for p in picks)
         if all_win:
@@ -280,6 +322,7 @@ def settle_round(db: Session, game_key: str, round_no: int, sum_val: int, powerb
             bet.payout = Decimal("0")
         bet.settled_at = now
         _sync_powerball_bet_history_settled(db, bet, now)
+        _apply_powerball_differential_commission(db, bet)
     return len(bets)
 
 

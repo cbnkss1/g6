@@ -1,0 +1,17 @@
+[Unit]
+Description=game_platform FastAPI (플레이어 /gp-api → 포트 8100)
+After=network.target
+
+[Service]
+Type=simple
+User=boss
+Group=boss
+WorkingDirectory=/var/www/html/v6/game_platform
+Environment=PYTHONPATH=/var/www/html/v6/game_platform
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/var/www/html/v6/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8100
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

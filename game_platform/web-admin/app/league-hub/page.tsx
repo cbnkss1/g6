@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAdminDashboardSocket } from "@/hooks/useAdminDashboardSocket";
@@ -35,8 +36,7 @@ type BetRow = {
 // ─── 포맷 헬퍼 ───────────────────────────────────────────────────────────────
 function fmtMoney(v: string | number | null | undefined): string {
   if (v == null) return "-";
-  const n = Number(v);
-  return isNaN(n) ? String(v) : n.toLocaleString("ko-KR");
+  return formatMoneyInt(v);
 }
 function fmtDt(iso: string | null): string {
   if (!iso) return "-";

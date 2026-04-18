@@ -221,3 +221,50 @@ export async function placeSportsBet(
   if (!r.ok) throw new Error(readErr(r, data));
   return data as Record<string, unknown>;
 }
+
+export type CasinoWalletStatus = {
+  game_money_balance?: string;
+  casino_balance: string;
+  plxmed_transfer_demo?: boolean;
+  ledger_only_transfers?: boolean;
+};
+
+export async function fetchCasinoWalletStatus(token: string): Promise<CasinoWalletStatus> {
+  const r = await fetch(`${b()}/api/player/games/casino/wallet-status`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as CasinoWalletStatus;
+}
+
+export async function transferToCasinoWallet(token: string, amount: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${b()}/api/player/games/casino/wallet/transfer-to-casino`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount }),
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as Record<string, unknown>;
+}
+
+export async function transferFromCasinoWallet(token: string, amount: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${b()}/api/player/games/casino/wallet/transfer-from-casino`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount }),
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as Record<string, unknown>;
+}

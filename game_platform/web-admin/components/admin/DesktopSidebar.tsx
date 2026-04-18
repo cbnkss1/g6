@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { activeNavHref, isNavItemActive } from "@/lib/navActive";
 import { useAdminUiStore } from "@/store/useAdminUiStore";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -11,6 +11,10 @@ type NavItem = {
   href: string;
   label: string;
   icon: string;
+  /** 이 항목 위에 구역 제목(레거시 내역 메뉴 묶음) */
+  sectionTitle?: string;
+  /** 배팅·종목과 구분되는 하위 줄(들여쓰기 + 왼쪽 강조) */
+  nested?: boolean;
 };
 
 type NavGroup = {
@@ -31,7 +35,7 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     ],
   },
   {
-    group: "수익 현황",
+    group: "수익 관련",
     icon: "◇",
     items: [
       { href: "/", label: "메인 대시보드", icon: "◈" },
@@ -52,9 +56,9 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     group: "정산",
     icon: "¥",
     items: [
-      { href: "/settlements", label: "전체 수익 · 전환형", icon: "¥" },
+      { href: "/settlements", label: "전체 수익 · 정산판", icon: "¥" },
       { href: "/settlements/casino-day", label: "카지노 당일금액 전환", icon: "🃏" },
-      { href: "/settlements/slot-period", label: "슬롯 정산금 전환", icon: "🎰" },
+      { href: "/settlements/slot-period", label: "슬롯 정산금 신청", icon: "🎰" },
       { href: "/settlements/casino-sum", label: "카지노 당일금액 합산", icon: "◑" },
       { href: "/settlements/slot-sum", label: "슬롯 정산금 합산", icon: "◐" },
     ],
@@ -64,11 +68,7 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     icon: "$",
     items: [
       { href: "/cash", label: "입출금 콘솔", icon: "◈" },
-      { href: "/cash/charge", label: "충전 처리", icon: "↓" },
-      { href: "/cash/exchange", label: "환전 처리", icon: "↑" },
       { href: "/cash/transfer", label: "머니 · 포인트 전환", icon: "⇄" },
-      { href: "/support", label: "고객센터", icon: "✉" },
-      { href: "/messages", label: "쪽지", icon: "💬" },
     ],
   },
   {
@@ -84,16 +84,36 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     group: "내역",
     icon: "◆",
     items: [
-      { href: "/betting", label: "전체 배팅 내역", icon: "◆" },
-      { href: "/betting/casino", label: "카지노", icon: "🃏" },
+      { href: "/betting", label: "배팅내역", icon: "◆" },
+      {
+        href: "/history/money",
+        label: "머니 이동내역",
+        icon: "⊡",
+        sectionTitle: "머니 · 포인트 · 충환전",
+        nested: true,
+      },
+      { href: "/history/point", label: "포인트 이동내역", icon: "◎", nested: true },
+      { href: "/history/charge", label: "최근충전내역", icon: "↓", nested: true },
+      { href: "/history/exchange", label: "최근환전내역", icon: "↑", nested: true },
+      {
+        href: "/betting/casino",
+        label: "카지노",
+        icon: "🃏",
+        sectionTitle: "종목별 배팅",
+      },
       { href: "/betting/slot", label: "슬롯", icon: "🎰" },
       { href: "/betting/sports", label: "스포츠", icon: "⚽" },
       { href: "/betting/powerball-bets", label: "파워볼", icon: "⚡" },
-      { href: "/history/money", label: "머니 이동 내역", icon: "⊡" },
-      { href: "/history/point", label: "포인트 이동 내역", icon: "◎" },
-      { href: "/history/charge", label: "최근 충전 내역", icon: "↓" },
-      { href: "/history/exchange", label: "최근 환전 내역", icon: "↑" },
       { href: "/audit", label: "감사 로그", icon: "📋" },
+    ],
+  },
+  {
+    group: "시스템",
+    icon: "⊞",
+    items: [
+      { href: "/system", label: "시스템", icon: "◈" },
+      { href: "/support", label: "고객센터", icon: "✉" },
+      { href: "/messages", label: "쪽지", icon: "💬" },
     ],
   },
   {
@@ -136,7 +156,7 @@ export function DesktopSidebar() {
     for (const g of groups) {
       if (g.items.some((i) => i.href === best)) set.add(g.group);
     }
-    if (set.size === 0) set.add("수익 현황");
+    if (set.size === 0) set.add("수익 관련");
     return set;
   };
 
@@ -286,40 +306,54 @@ export function DesktopSidebar() {
                 >
                   {group.items.map((item) => {
                     const active = itemActive(item.href);
+                    const nested = Boolean(item.nested);
                     return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 ${
-                          active ? "text-slate-900" : "text-slate-200 hover:text-white"
-                        }`}
-                        style={
-                          active
-                            ? {
-                                background: "linear-gradient(135deg, #d4af37 0%, #c49b2e 100%)",
-                                boxShadow:
-                                  "0 0 16px rgba(212,175,55,0.3), inset 0 1px 0 rgba(255,255,255,0.12)",
-                              }
-                            : {}
-                        }
-                      >
-                        {!active && (
-                          <span
-                            className="absolute inset-0 rounded-xl opacity-0 transition-opacity group-hover:opacity-100"
-                            style={{ background: "rgba(212,175,55,0.08)" }}
-                          />
+                      <Fragment key={item.href}>
+                        {item.sectionTitle && (
+                          <div
+                            className="mb-1 mt-2 border-t border-slate-600/35 px-3 pt-2.5"
+                            aria-hidden
+                          >
+                            <span className="block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                              {item.sectionTitle}
+                            </span>
+                          </div>
                         )}
-                        <span
-                          className={`relative shrink-0 text-sm ${active ? "text-slate-900" : "text-slate-400 group-hover:text-premium"}`}
+                        <Link
+                          href={item.href}
+                          className={`group relative flex items-center gap-2.5 rounded-xl py-2.5 text-sm transition-all duration-200 ${
+                            nested ? "ml-0.5 border-l-2 border-amber-500/35 pl-2.5 pr-3" : "px-3"
+                          } ${nested && !active ? "bg-slate-950/50" : ""} ${
+                            active ? "text-slate-900" : "text-slate-200 hover:text-white"
+                          }`}
+                          style={
+                            active
+                              ? {
+                                  background: "linear-gradient(135deg, #d4af37 0%, #c49b2e 100%)",
+                                  boxShadow:
+                                    "0 0 16px rgba(212,175,55,0.3), inset 0 1px 0 rgba(255,255,255,0.12)",
+                                }
+                              : {}
+                          }
                         >
-                          {item.icon}
-                        </span>
-                        <span
-                          className={`relative truncate text-[13px] font-medium leading-snug tracking-wide ${active ? "text-slate-900" : ""}`}
-                        >
-                          {item.label}
-                        </span>
-                      </Link>
+                          {!active && (
+                            <span
+                              className="absolute inset-0 rounded-xl opacity-0 transition-opacity group-hover:opacity-100"
+                              style={{ background: "rgba(212,175,55,0.08)" }}
+                            />
+                          )}
+                          <span
+                            className={`relative shrink-0 text-sm ${active ? "text-slate-900" : "text-slate-400 group-hover:text-premium"}`}
+                          >
+                            {item.icon}
+                          </span>
+                          <span
+                            className={`relative truncate text-[13px] font-medium leading-snug tracking-wide ${nested ? "text-[12.5px]" : ""} ${active ? "text-slate-900" : ""}`}
+                          >
+                            {item.label}
+                          </span>
+                        </Link>
+                      </Fragment>
                     );
                   })}
                 </div>

@@ -80,7 +80,7 @@ def _get_rates(db: Session, user_id: int) -> Dict[str, float]:
     rows = db.scalars(
         select(UserGameRollingRate).where(UserGameRollingRate.user_id == user_id)
     ).all()
-    rate_map: Dict[str, float] = {r.game_type: float(r.rate_percent) for r in rows}
+    rate_map: Dict[str, float] = {r.game_type: float(r.rolling_rate_percent) for r in rows}
     return rate_map
 
 
@@ -100,12 +100,13 @@ def _set_rates(db: Session, user_id: int, casino_rolling: float, slot_rolling: f
             )
         )
         if existing:
-            existing.rate_percent = Decimal(str(val))
+            existing.rolling_rate_percent = Decimal(str(val))
         else:
             db.add(UserGameRollingRate(
                 user_id=user_id,
                 game_type=game_type,
-                rate_percent=Decimal(str(val)),
+                rolling_rate_percent=Decimal(str(val)),
+                losing_rate_percent=Decimal("0"),
             ))
 
 
