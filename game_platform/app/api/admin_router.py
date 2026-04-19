@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,7 @@ from app.constants import (
 from app.dependencies.data_scope import FORBIDDEN_USER_DATA, assert_viewer_may_access_target_user
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, hash_password
 from app.dependencies.auth_jwt import require_admin_user, require_super_admin
 from app.models.admin_allowed_ip import AdminAllowedIp
 from app.models.audit_log import AuditLog
@@ -176,6 +176,13 @@ class WalletAdjustBody(BaseModel):
     direction: str  # credit | debit
     amount: str
     memo: Optional[str] = ""
+
+
+class AdminSetUserPasswordBody(BaseModel):
+    """슈퍼관리자 전용: 대상 회원 로그인 비밀번호 재설정 (평문·해시는 응답·감사로그에 넣지 않음)."""
+
+    new_password: str = Field(..., min_length=8, max_length=128)
+    new_password_confirm: str = Field(..., min_length=8, max_length=128)
 
 
 class AdminUserProfilePatchBody(BaseModel):
@@ -855,6 +862,8 @@ def _admin_user_profile_payload(db: Session, viewer: User, target: User) -> Dict
     wc, wd = _apply_member_target_wallet_flags(viewer, target, wc, wd)
     # 회원 프로필·상세 필드 수정은 슈퍼관리자만 (총판·스태프는 조회·지급·회수·롤링 등만)
     can_e = viewer.role == USER_ROLE_SUPER_ADMIN
+    hp = getattr(target, "hashed_password", None)
+    has_login_password = bool(hp and str(hp).strip())
     return {
         "id": target.id,
         "login_id": target.login_id,
@@ -875,11 +884,13 @@ def _admin_user_profile_payload(db: Session, viewer: User, target: User) -> Dict
         "account_holder": target.account_holder,
         "telegram_id": target.telegram_id,
         "admin_partner_limited_ui": bool(getattr(target, "admin_partner_limited_ui", False)),
+        "has_login_password": has_login_password,
         "permissions": {
             "can_wallet_credit": wc,
             "can_wallet_debit": wd,
             "can_wallet_adjust": wc or wd,
             "can_edit_profile": can_e,
+            "can_reset_login_password": viewer.role == USER_ROLE_SUPER_ADMIN,
         },
     }
 
@@ -981,6 +992,36 @@ def admin_user_profile_patch(
     db.commit()
     db.refresh(target)
     return _admin_user_profile_payload(db, user, target)
+
+
+@router.post("/users/{user_id}/password", summary="회원 로그인 비밀번호 재설정 (슈퍼관리자 전용)")
+def admin_set_user_password(
+    user_id: int,
+    body: AdminSetUserPasswordBody,
+    admin: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+    request: Request = None,
+) -> Dict[str, Any]:
+    """기존 비밀번호는 조회·반환하지 않으며, 새 비밀번호만 해시 저장합니다."""
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    assert_viewer_may_access_target_user(db, admin, user_id)
+    if body.new_password != body.new_password_confirm:
+        raise HTTPException(status_code=400, detail="새 비밀번호가 일치하지 않습니다.")
+    target.hashed_password = hash_password(body.new_password)
+    AuditService.log(
+        db,
+        actor=admin,
+        action="USER_PASSWORD_RESET_BY_SUPER",
+        target_type="USER",
+        target_id=str(target.id),
+        note="login password reset (plaintext not logged)",
+        actor_ip=request.client.host if request and request.client else None,
+    )
+    db.commit()
+    db.refresh(target)
+    return _admin_user_profile_payload(db, admin, target)
 
 
 @router.post("/users/{user_id}/wallet/adjust", summary="게임머니 즉시 지급(credit)/회수(debit)")

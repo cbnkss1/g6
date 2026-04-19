@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CasinoMoneyTransferPanel } from "@/components/CasinoMoneyTransferPanel";
+import { RollingPointConvertPanel } from "@/components/RollingPointConvertPanel";
 import { PlayerLedgerPanel } from "@/components/PlayerLedgerPanel";
 import { SiteHeader } from "@/components/SiteHeader";
 import { usePlayerAuth } from "@/lib/playerAuthContext";
@@ -23,6 +24,15 @@ export default function GameMoneyPage() {
   const memoUrl = playerMemoUrl();
   const adminUrl = playerAdminWebUrl();
 
+  useEffect(() => {
+    const h = typeof window !== "undefined" ? window.location.hash : "";
+    if (h === "#rolling" || h === "#casino") {
+      requestAnimationFrame(() => {
+        document.querySelector(h)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }, []);
+
   return (
     <div className="flex min-h-screen flex-col bg-[#060b14] text-slate-200">
       <SiteHeader />
@@ -30,11 +40,13 @@ export default function GameMoneyPage() {
         <div>
           <h1 className="font-display text-2xl font-semibold text-slate-100">게임머니 전환</h1>
           <p className="mt-1 text-sm text-slate-500">
-            메인 지갑(게임머니)과 카지노 지갑(Plxmed) 간 이동입니다. 입금·출금 신청은{" "}
+            <strong className="text-slate-400">포인트 전환</strong>은 롤링 포인트를 게임머니로 바꿉니다.{" "}
+            <strong className="text-slate-400">카지노 전환</strong>은 메인 지갑과 카지노(Plxmed) 지갑 간 이동입니다. 입금·출금
+            신청은{" "}
             <Link href="/wallet" className="text-premium-glow underline decoration-premium/40 underline-offset-2">
               입출금
             </Link>
-            메뉴를 이용해 주세요.
+            을 이용해 주세요.
           </p>
         </div>
 
@@ -51,17 +63,34 @@ export default function GameMoneyPage() {
           </div>
         ) : null}
 
-        <CasinoMoneyTransferPanel
-          token={token}
-          hydrated={hydrated}
-          loggedIn={Boolean(user && token)}
-          onOpenLogin={openLogin}
-          onAfterTransfer={async () => {
-            setLedgerRefresh((k) => k + 1);
-            await refreshProfile();
-          }}
-          showHeading={false}
-        />
+        <div id="rolling" className="scroll-mt-24">
+          <RollingPointConvertPanel
+            token={token}
+            hydrated={hydrated}
+            loggedIn={Boolean(user && token)}
+            rollingBalance={user?.rolling_point_balance}
+            onOpenLogin={openLogin}
+            onAfterConvert={async () => {
+              setLedgerRefresh((k) => k + 1);
+              await refreshProfile();
+            }}
+            showHeading
+          />
+        </div>
+
+        <div id="casino" className="scroll-mt-24">
+          <CasinoMoneyTransferPanel
+            token={token}
+            hydrated={hydrated}
+            loggedIn={Boolean(user && token)}
+            onOpenLogin={openLogin}
+            onAfterTransfer={async () => {
+              setLedgerRefresh((k) => k + 1);
+              await refreshProfile();
+            }}
+            showHeading
+          />
+        </div>
 
         {token ? <PlayerLedgerPanel token={token} refreshKey={ledgerRefresh} /> : null}
 

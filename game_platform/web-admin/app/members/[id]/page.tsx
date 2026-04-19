@@ -16,6 +16,8 @@ type ProfilePermissions = {
   can_wallet_debit?: boolean;
   can_wallet_adjust: boolean;
   can_edit_profile: boolean;
+  /** 슈퍼관리자만 true — 로그인 비밀번호 재설정 API 호출 가능 */
+  can_reset_login_password?: boolean;
 };
 
 type Profile = {
@@ -40,6 +42,8 @@ type Profile = {
   bank_account: string | null;
   account_holder: string | null;
   telegram_id: string | null;
+  /** 해시 존재 여부만 — 평문·해시 문자열은 절대 내려오지 않음 */
+  has_login_password?: boolean;
   permissions?: ProfilePermissions;
 };
 
@@ -91,6 +95,9 @@ export default function MemberDetailPage() {
   const [wallet, setWallet] = useState<null | { mode: "credit" | "debit" }>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [pwdNew, setPwdNew] = useState("");
+  const [pwdConfirm, setPwdConfirm] = useState("");
+  const [pwdMsg, setPwdMsg] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ["admin", "user-profile", token ?? "", id],
@@ -112,6 +119,31 @@ export default function MemberDetailPage() {
   const canWalletCredit = (perms?.can_wallet_credit ?? perms?.can_wallet_adjust) !== false;
   const canWalletDebit = (perms?.can_wallet_debit ?? perms?.can_wallet_adjust) !== false;
   const canEdit = Boolean(perms?.can_edit_profile);
+  const canResetLoginPassword = Boolean(perms?.can_reset_login_password);
+
+  const pwdMut = useMutation({
+    mutationFn: async () => {
+      if (!base || !token) throw new Error("no token");
+      const r = await adminFetch(`${base}/admin/users/${id}/password`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: pwdNew, new_password_confirm: pwdConfirm }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return (await r.json()) as Profile;
+    },
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ["admin", "user-profile"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      qc.setQueryData(["admin", "user-profile", token ?? "", id], data);
+      setPwdNew("");
+      setPwdConfirm("");
+      setPwdMsg("로그인 비밀번호가 변경되었습니다.");
+    },
+    onError: (e: Error) => {
+      setPwdMsg(e.message);
+    },
+  });
 
   useEffect(() => {
     if (q.data) {
@@ -406,6 +438,74 @@ export default function MemberDetailPage() {
                 </p>
               )}
             </div>
+
+            {canResetLoginPassword ? (
+              <div className="sm:col-span-2 space-y-3 rounded-xl border border-amber-500/20 bg-amber-950/15 p-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-amber-200/90">로그인 비밀번호 (슈퍼관리자 전용)</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    기존 비밀번호는 시스템에 평문으로 저장되지 않으며, 관리자도 확인할 수 없습니다.{" "}
+                    {u.has_login_password ? (
+                      <span className="text-slate-300">현재 로그인 비밀번호가 설정되어 있습니다.</span>
+                    ) : (
+                      <span className="text-amber-200/80">아직 로그인 비밀번호가 없거나 초기화된 상태입니다.</span>
+                    )}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="새 비밀번호 (8자 이상)"
+                    value={pwdNew}
+                    onChange={(e) => {
+                      setPwdNew(e.target.value);
+                      setPwdMsg(null);
+                    }}
+                    className="admin-touch-input member-input rounded-xl border px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="새 비밀번호 확인"
+                    value={pwdConfirm}
+                    onChange={(e) => {
+                      setPwdConfirm(e.target.value);
+                      setPwdMsg(null);
+                    }}
+                    className="admin-touch-input member-input rounded-xl border px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={pwdMut.isPending}
+                    onClick={() => {
+                      if (pwdNew.length < 8 || pwdConfirm.length < 8) {
+                        setPwdMsg("비밀번호는 8자 이상으로 맞춰 입력해 주세요.");
+                        return;
+                      }
+                      if (pwdNew !== pwdConfirm) {
+                        setPwdMsg("새 비밀번호와 확인이 일치하지 않습니다.");
+                        return;
+                      }
+                      pwdMut.mutate();
+                    }}
+                    className="rounded-xl border border-amber-500/40 bg-amber-600/20 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-600/30 disabled:opacity-50"
+                  >
+                    {pwdMut.isPending ? "변경 중…" : "로그인 비밀번호 변경"}
+                  </button>
+                  {pwdMsg ? (
+                    <span
+                      className={`text-sm ${pwdMsg.includes("변경") || pwdMsg.includes("되었") ? "text-emerald-400" : "text-red-400"}`}
+                    >
+                      {pwdMsg}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <p className="text-[10px] uppercase tracking-widest text-slate-600">상태</p>
               {canEdit ? (

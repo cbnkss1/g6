@@ -34,6 +34,18 @@ export function SiteHeader() {
             >
               입출금
             </Link>
+            <Link
+              href="/game-money#rolling"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-quantum-cyan/5 hover:text-quantum-cyan sm:text-sm"
+            >
+              포인트 전환
+            </Link>
+            <Link
+              href="/game-money#casino"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:bg-quantum-cyan/5 hover:text-quantum-cyan sm:text-sm"
+            >
+              카지노 전환
+            </Link>
             {supportUrl && (
               <a href={supportUrl} target="_blank" rel="noopener noreferrer" className={extLink}>
                 고객센터
@@ -71,6 +83,18 @@ export function SiteHeader() {
               >
                 입출금
               </Link>
+              <Link
+                href="/game-money#rolling"
+                className="rounded-lg border border-white/10 px-2 py-1.5 text-[11px] text-slate-400 hover:border-quantum-cyan/35 hover:text-quantum-cyan md:hidden"
+              >
+                포인트
+              </Link>
+              <Link
+                href="/game-money#casino"
+                className="rounded-lg border border-white/10 px-2 py-1.5 text-[11px] text-slate-400 hover:border-quantum-cyan/35 hover:text-quantum-cyan md:hidden"
+              >
+                카지노
+              </Link>
               {supportUrl && (
                 <a
                   href={supportUrl}
@@ -106,6 +130,18 @@ export function SiteHeader() {
                 className="hidden rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-400 hover:text-quantum-cyan sm:inline"
               >
                 입출금
+              </Link>
+              <Link
+                href="/game-money#rolling"
+                className="hidden rounded-lg border border-white/10 px-2 py-1.5 text-[11px] text-slate-400 hover:text-quantum-cyan sm:inline"
+              >
+                포인트
+              </Link>
+              <Link
+                href="/game-money#casino"
+                className="hidden rounded-lg border border-white/10 px-2 py-1.5 text-[11px] text-slate-400 hover:text-quantum-cyan sm:inline"
+              >
+                카지노
               </Link>
               <button
                 type="button"

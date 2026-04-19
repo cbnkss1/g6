@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { CasinoMoneyTransferPanel } from "@/components/CasinoMoneyTransferPanel";
+import { RollingPointConvertPanel } from "@/components/RollingPointConvertPanel";
 import { SiteHeader } from "@/components/SiteHeader";
 import { usePlayerAuth } from "@/lib/playerAuthContext";
 import {
@@ -116,24 +118,26 @@ export default function WalletPage() {
               </div>
             </div>
 
-            <div className="glass-panel space-y-4 p-5">
-              <h2 className="text-sm font-semibold text-slate-300">카지노머니 전환</h2>
-              <p className="text-sm leading-relaxed text-slate-500">
-                카지노 지갑과 게임머니 간 전환은 별도 연동이 필요합니다.{" "}
-                {supportUrl ? (
-                  <a
-                    href={supportUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-premium-glow underline decoration-premium/40 underline-offset-2 hover:text-premium"
-                  >
-                    고객센터로 문의
-                  </a>
-                ) : (
-                  "상단 고객센터 링크(환경변수 설정 시) 또는 운영팀으로 문의해 주세요."
-                )}
-              </p>
-            </div>
+            <RollingPointConvertPanel
+              token={token}
+              hydrated={hydrated}
+              loggedIn={Boolean(user && token)}
+              rollingBalance={user?.rolling_point_balance}
+              onOpenLogin={openLogin}
+              onAfterConvert={async () => {
+                await refreshProfile();
+              }}
+            />
+
+            <CasinoMoneyTransferPanel
+              token={token}
+              hydrated={hydrated}
+              loggedIn={Boolean(user && token)}
+              onOpenLogin={openLogin}
+              onAfterTransfer={async () => {
+                await refreshProfile();
+              }}
+            />
 
             <div className="glass-panel p-5">
               <div className="mb-4 flex rounded-lg border border-white/10 p-0.5">

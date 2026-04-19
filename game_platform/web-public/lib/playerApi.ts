@@ -254,6 +254,22 @@ export async function playerListRollingLedger(
   return data as { items: LedgerEntryPublic[] };
 }
 
+/** 롤링 포인트 → 게임머니 (플레이어 본인) */
+export async function playerConvertRollingToGameMoney(
+  token: string,
+  amount: string,
+): Promise<{ ok: boolean; game_money_balance: string; rolling_point_balance: string }> {
+  const r = await fetch(`${base()}/api/player/wallet/convert-rolling`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ amount }),
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { ok: boolean; game_money_balance: string; rolling_point_balance: string };
+}
+
 export async function playerChangePassword(
   token: string,
   body: { current_password: string; new_password: string },

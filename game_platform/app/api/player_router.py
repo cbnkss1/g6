@@ -19,6 +19,8 @@ from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.dependencies.auth_jwt import get_current_user_from_token
 from app.models.cash_request import CashRequest
+from app.models.enums import GameMoneyLedgerReason, RollingPointLedgerReason
+from app.models.ledger import GameMoneyLedgerEntry, RollingPointLedgerEntry
 from app.models.site_config import SiteConfig
 from app.models.user import User
 from app.schemas.auth import LoginResponse, SiteConfigPublic, UserPublic
@@ -486,6 +488,70 @@ async def player_create_cash_request(
     )
     await admin_ws_manager.broadcast_event("dashboard_refresh", {})
     return cash_request_to_dict(req)
+
+
+class PlayerRollingConvertBody(BaseModel):
+    amount: str
+
+
+@router.post("/wallet/convert-rolling", summary="롤링 포인트 → 게임머니 전환 (플레이어 본인)")
+def player_wallet_convert_rolling(
+    body: PlayerRollingConvertBody,
+    user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    if user.role != USER_ROLE_PLAYER:
+        raise HTTPException(status_code=403, detail="플레이어 전용입니다.")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
+    try:
+        amt = Decimal(str(body.amount).strip().replace(",", ""))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="금액 형식이 올바르지 않습니다.") from e
+    if amt <= 0:
+        raise HTTPException(status_code=400, detail="0보다 큰 금액을 입력하세요.")
+
+    u = db.scalars(select(User).where(User.id == user.id).with_for_update()).one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    if u.rolling_point_balance < amt:
+        raise HTTPException(
+            status_code=400,
+            detail=f"롤링 포인트가 부족합니다. (보유: {u.rolling_point_balance})",
+        )
+
+    q = Decimal("0.000001")
+    new_roll = (u.rolling_point_balance - amt).quantize(q)
+    new_gm = (u.game_money_balance + amt).quantize(q)
+    u.rolling_point_balance = new_roll
+    u.game_money_balance = new_gm
+    db.add(
+        RollingPointLedgerEntry(
+            user_id=u.id,
+            delta=-amt,
+            balance_after=new_roll,
+            reason=RollingPointLedgerReason.CONVERT_TO_GAME_MONEY.value,
+            reference_type="CONVERT",
+            reference_id="rolling_to_gm",
+        )
+    )
+    db.add(
+        GameMoneyLedgerEntry(
+            user_id=u.id,
+            delta=amt,
+            balance_after=new_gm,
+            reason=GameMoneyLedgerReason.ROLLING_POINT_CONVERT.value,
+            reference_type="CONVERT",
+            reference_id="rolling_to_gm",
+        )
+    )
+    db.commit()
+    db.refresh(u)
+    return {
+        "ok": True,
+        "game_money_balance": str(u.game_money_balance),
+        "rolling_point_balance": str(u.rolling_point_balance),
+    }
 
 
 # ---------------------------------------------------------------------------
