@@ -44,18 +44,40 @@ def _ticket_scope_user_ids(db: Session, viewer: User) -> Optional[List[int]]:
     return list(downward_subtree_user_ids_for_scope(db, viewer.id))
 
 
+def _apply_queue_status_filter(
+    filters: list,
+    *,
+    status_filter: Optional[str],
+    queue: Optional[str],
+) -> None:
+    """status가 없으면 queue로 구분: pending=OPEN만, done=답변완료·종료, all=제한 없음."""
+    if status_filter and status_filter.strip():
+        filters.append(SupportTicket.status == status_filter.strip().upper())
+        return
+    q = (queue or "pending").strip().lower()
+    if q == "done":
+        filters.append(SupportTicket.status.in_(["ANSWERED", "CLOSED"]))
+    elif q == "all":
+        pass
+    else:
+        filters.append(SupportTicket.status == "OPEN")
+
+
 @router.get("/support/tickets", summary="1:1 문의 목록")
 def admin_list_support_tickets(
     viewer: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
     status_filter: Optional[str] = Query(None, alias="status"),
+    queue: Optional[str] = Query(
+        "pending",
+        description="pending=미처리(OPEN), done=처리완료(ANSWERED/CLOSED), all=전체 — status와 동시 사용 불가",
+    ),
     category_filter: Optional[str] = Query(None, alias="category"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     filters = []
-    if status_filter and status_filter.strip():
-        filters.append(SupportTicket.status == status_filter.strip().upper())
+    _apply_queue_status_filter(filters, status_filter=status_filter, queue=queue)
     if category_filter and category_filter.strip():
         filters.append(SupportTicket.category == category_filter.strip().upper())
     scope = _ticket_scope_user_ids(db, viewer)
@@ -117,25 +139,18 @@ def create_partner_to_super_ticket(
 def list_my_partner_to_super_tickets(
     viewer: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    queue: Optional[str] = Query("pending", description="pending|done|all"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
-    base = (
-        select(SupportTicket)
-        .where(
-            SupportTicket.user_id == viewer.id,
-            SupportTicket.category == PARTNER_TO_SUPER_CATEGORY,
-        )
-        .order_by(desc(SupportTicket.created_at))
-    )
-    count_stmt = (
-        select(func.count())
-        .select_from(SupportTicket)
-        .where(
-            SupportTicket.user_id == viewer.id,
-            SupportTicket.category == PARTNER_TO_SUPER_CATEGORY,
-        )
-    )
+    filters = [
+        SupportTicket.user_id == viewer.id,
+        SupportTicket.category == PARTNER_TO_SUPER_CATEGORY,
+    ]
+    _apply_queue_status_filter(filters, status_filter=status_filter, queue=queue)
+    base = select(SupportTicket).where(*filters).order_by(desc(SupportTicket.created_at))
+    count_stmt = select(func.count()).select_from(SupportTicket).where(*filters)
     total = int(db.scalar(count_stmt) or 0)
     rows = list(db.scalars(base.offset(offset).limit(limit)).all())
     return {
@@ -237,3 +252,20 @@ def admin_reply_support_ticket(
     db.refresh(row)
     background_tasks.add_task(_broadcast_support_dashboard_refresh)
     return {"ok": True, "ticket_id": row.id, "status": row.status}
+
+
+@router.delete("/support/tickets/{ticket_id}", summary="1:1 문의 삭제")
+def admin_delete_support_ticket(
+    ticket_id: int,
+    background_tasks: BackgroundTasks,
+    viewer: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    row = db.get(SupportTicket, ticket_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    assert_viewer_may_access_target_user(db, viewer, row.user_id)
+    db.delete(row)
+    db.commit()
+    background_tasks.add_task(_broadcast_support_dashboard_refresh)
+    return {"ok": True, "deleted_id": ticket_id}

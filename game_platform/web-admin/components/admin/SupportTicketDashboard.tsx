@@ -82,20 +82,24 @@ const CAT_LABEL: Record<string, string> = {
   PARTNER_TO_SUPER: "파트너→슈퍼",
 };
 
+type ListQueue = "pending" | "done" | "all";
+
 export function SupportTicketDashboard() {
   const token = useAuthStore((s) => s.token);
   const base = publicApiBase();
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  /** 대기(OPEN) / 처리완료(ANSWERED·CLOSED) / 전체 — 슈퍼·총판 동일 API */
+  const [listQueue, setListQueue] = useState<ListQueue>("pending");
   const [replyText, setReplyText] = useState("");
 
   const listQ = useQuery({
-    queryKey: ["admin", "support-tickets", token ?? "", statusFilter],
+    queryKey: ["admin", "support-tickets", token ?? "", listQueue],
     queryFn: async () => {
       if (!base || !token) throw new Error("no token");
-      const q = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : "";
-      const r = await adminFetch(`${base}/admin/support/tickets${q}`, {
+      const q = new URLSearchParams();
+      q.set("queue", listQueue);
+      const r = await adminFetch(`${base}/admin/support/tickets?${q.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -111,7 +115,11 @@ export function SupportTicketDashboard() {
   const effectiveId = selectedId ?? items[0]?.id ?? null;
 
   useEffect(() => {
-    if (items.length && selectedId == null) {
+    if (items.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (selectedId == null || !items.some((i) => i.id === selectedId)) {
       setSelectedId(items[0].id);
     }
   }, [items, selectedId]);
@@ -158,6 +166,26 @@ export function SupportTicketDashboard() {
     },
   });
 
+  const deleteM = useMutation({
+    mutationFn: async (id: number) => {
+      if (!base || !token) throw new Error("no token");
+      const r = await adminFetch(`${base}/admin/support/tickets/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || "삭제 실패");
+      }
+      return r.json() as Promise<{ ok: boolean }>;
+    },
+    onSuccess: (_, deletedId) => {
+      void qc.invalidateQueries({ queryKey: ["admin", "support-tickets"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "support-ticket"] });
+      if (selectedId === deletedId) setSelectedId(null);
+    },
+  });
+
   const detail = detailQ.data;
   const showDetail = effectiveId != null && detail?.ticket.id === effectiveId;
 
@@ -172,17 +200,33 @@ export function SupportTicketDashboard() {
           <h2 className="bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-lg font-bold text-transparent">
             1:1 문의 큐
           </h2>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-lg border border-slate-600 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
-            >
-              <option value="">전체 상태</option>
-              <option value="OPEN">OPEN</option>
-              <option value="ANSWERED">ANSWERED</option>
-              <option value="CLOSED">CLOSED</option>
-            </select>
+          <p className="mt-1 text-[10px] text-slate-500">
+            기본은 <span className="text-slate-400">미처리만</span> 표시합니다. 답변 후에는「처리 완료」로 이동합니다.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(
+              [
+                ["pending", "미처리"],
+                ["done", "처리 완료"],
+                ["all", "전체"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setListQueue(key);
+                  setSelectedId(null);
+                }}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition ${
+                  listQueue === key
+                    ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-100"
+                    : "border-slate-700 bg-slate-900/50 text-slate-500 hover:border-slate-600"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
@@ -194,28 +238,42 @@ export function SupportTicketDashboard() {
             <ul className="space-y-1">
               {items.map((row) => (
                 <li key={row.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(row.id)}
-                    className={`w-full rounded-xl border px-3 py-2.5 text-left text-xs transition ${
-                      effectiveId === row.id
-                        ? "border-cyan-400/60 bg-cyan-500/10 text-cyan-100"
-                        : "border-slate-700/60 bg-slate-900/40 text-slate-300 hover:border-cyan-500/30"
-                    }`}
-                  >
-                    <div className="flex justify-between gap-2">
-                      <span className="font-mono text-cyan-300/90">#{row.id}</span>
-                      <span
-                        className={
-                          row.status === "OPEN" ? "text-amber-300" : "text-emerald-400/90"
-                        }
-                      >
-                        {row.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 font-medium text-slate-200">{row.title}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">{row.user_login_id}</p>
-                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(row.id)}
+                      className={`min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-left text-xs transition ${
+                        effectiveId === row.id
+                          ? "border-cyan-400/60 bg-cyan-500/10 text-cyan-100"
+                          : "border-slate-700/60 bg-slate-900/40 text-slate-300 hover:border-cyan-500/30"
+                      }`}
+                    >
+                      <div className="flex justify-between gap-2">
+                        <span className="font-mono text-cyan-300/90">#{row.id}</span>
+                        <span
+                          className={
+                            row.status === "OPEN" ? "text-amber-300" : "text-emerald-400/90"
+                          }
+                        >
+                          {row.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 font-medium text-slate-200">{row.title}</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500">{row.user_login_id}</p>
+                    </button>
+                    <button
+                      type="button"
+                      title="삭제"
+                      disabled={deleteM.isPending}
+                      onClick={() => {
+                        if (!confirm(`#${row.id} 문의를 삭제할까요?`)) return;
+                        deleteM.mutate(row.id);
+                      }}
+                      className="shrink-0 rounded-xl border border-rose-500/35 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-950/70 disabled:opacity-40"
+                    >
+                      삭제
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -319,7 +377,7 @@ export function SupportTicketDashboard() {
                 className="w-full rounded-xl border border-slate-600 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 focus:border-emerald-500/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
                 placeholder="답변 내용을 입력하세요. 매크로 버튼으로 초안을 넣을 수 있습니다."
               />
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   disabled={replyM.isPending}
@@ -327,6 +385,18 @@ export function SupportTicketDashboard() {
                   className="rounded-xl border border-amber-400/50 bg-amber-500/20 px-5 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/30 disabled:opacity-50"
                 >
                   {replyM.isPending ? "저장 중…" : "답변 등록 (ANSWERED)"}
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteM.isPending}
+                  onClick={() => {
+                    if (effectiveId == null) return;
+                    if (!confirm(`#${effectiveId} 문의를 삭제할까요?`)) return;
+                    deleteM.mutate(effectiveId);
+                  }}
+                  className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-4 py-2 text-sm font-medium text-rose-200 hover:bg-rose-950/80 disabled:opacity-40"
+                >
+                  삭제
                 </button>
               </div>
               {replyM.isError ? (

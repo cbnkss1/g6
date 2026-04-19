@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -30,6 +30,8 @@ type Detail = {
   };
 };
 
+type ListQueue = "pending" | "done" | "all";
+
 export default function SuperInquiryPage() {
   const token = useAuthStore((s) => s.token);
   const base = publicApiBase();
@@ -38,12 +40,15 @@ export default function SuperInquiryPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [listQueue, setListQueue] = useState<ListQueue>("pending");
 
   const listQ = useQuery({
-    queryKey: ["admin", "partner-to-super", token ?? ""],
+    queryKey: ["admin", "partner-to-super", token ?? "", listQueue],
     queryFn: async () => {
       if (!base || !token) throw new Error("no token");
-      const r = await adminFetch(`${base}/admin/support/partner-to-super`, {
+      const q = new URLSearchParams();
+      q.set("queue", listQueue);
+      const r = await adminFetch(`${base}/admin/support/partner-to-super?${q.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -52,6 +57,18 @@ export default function SuperInquiryPage() {
     },
     enabled: Boolean(token && base),
   });
+
+  const items = listQ.data?.items ?? [];
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (selectedId == null || !items.some((i) => i.id === selectedId)) {
+      setSelectedId(items[0].id);
+    }
+  }, [items, selectedId]);
 
   const detailQ = useQuery({
     queryKey: ["admin", "support-ticket-detail", selectedId, token ?? ""],
@@ -81,11 +98,26 @@ export default function SuperInquiryPage() {
     onSuccess: () => {
       setTitle("");
       setBody("");
-      qc.invalidateQueries({ queryKey: ["admin", "partner-to-super"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "partner-to-super"] });
     },
   });
 
-  const items = listQ.data?.items ?? [];
+  const deleteM = useMutation({
+    mutationFn: async (id: number) => {
+      if (!base || !token) throw new Error("no token");
+      const r = await adminFetch(`${base}/admin/support/tickets/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: (_, deletedId) => {
+      void qc.invalidateQueries({ queryKey: ["admin", "partner-to-super"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "support-ticket-detail"] });
+      if (selectedId === deletedId) setSelectedId(null);
+    },
+  });
 
   return (
     <div className="quantum-shell mx-auto max-w-[960px] space-y-6 px-3 py-4 sm:px-5">
@@ -93,8 +125,7 @@ export default function SuperInquiryPage() {
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-400/90">슈퍼관리자</p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">슈퍼관리자 문의</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-          운영·정산·계좌 등 <strong className="text-slate-300">슈퍼관리자에게만</strong> 전달되는 1:1 문의입니다. 플레이어 고객센터(
-          <span className="text-slate-500">/support</span>)와 별도로 관리됩니다.
+          운영·정산·계좌 등 <strong className="text-slate-300">슈퍼관리자에게만</strong> 전달되는 1:1 문의입니다. 미처리·처리 완료는 탭으로 구분합니다.
         </p>
       </header>
 
@@ -132,37 +163,77 @@ export default function SuperInquiryPage() {
 
         <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-5 sm:p-6">
           <h2 className="text-sm font-semibold text-slate-200">내 문의 목록</h2>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(
+              [
+                ["pending", "미처리"],
+                ["done", "처리 완료"],
+                ["all", "전체"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setListQueue(key);
+                  setSelectedId(null);
+                }}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium ${
+                  listQueue === key
+                    ? "border-premium/50 bg-premium/15 text-premium"
+                    : "border-slate-800 text-slate-500 hover:border-slate-600"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {listQ.isLoading ? <p className="mt-4 text-sm text-slate-500">불러오는 중…</p> : null}
           {listQ.isError ? (
             <p className="mt-4 text-sm text-red-400">{(listQ.error as Error).message}</p>
           ) : null}
           {!listQ.isLoading && items.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">등록한 문의가 없습니다.</p>
+            <p className="mt-4 text-sm text-slate-500">해당 목록에 문의가 없습니다.</p>
           ) : null}
           <ul className="mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-1">
             {items.map((it) => (
               <li key={it.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(it.id)}
-                  className={`w-full rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
-                    selectedId === it.id
-                      ? "border-premium/50 bg-premium/10 text-slate-100"
-                      : "border-slate-800 bg-slate-900/40 text-slate-400 hover:border-slate-700"
-                  }`}
-                >
-                  <span className="line-clamp-1 font-medium text-slate-200">{it.title}</span>
-                  <span className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                    {it.created_at ? new Date(it.created_at).toLocaleString("ko-KR") : ""}
-                    <span
-                      className={`rounded px-1.5 py-0.5 ${
-                        it.has_reply ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-200"
-                      }`}
-                    >
-                      {it.has_reply ? "답변됨" : "대기"}
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(it.id)}
+                    className={`min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                      selectedId === it.id
+                        ? "border-premium/50 bg-premium/10 text-slate-100"
+                        : "border-slate-800 bg-slate-900/40 text-slate-400 hover:border-slate-700"
+                    }`}
+                  >
+                    <span className="line-clamp-1 font-medium text-slate-200">{it.title}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                      {it.created_at ? new Date(it.created_at).toLocaleString("ko-KR") : ""}
+                      <span className="text-slate-600">{it.status}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 ${
+                          it.has_reply ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-200"
+                        }`}
+                      >
+                        {it.has_reply ? "답변됨" : "대기"}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    title="삭제"
+                    disabled={deleteM.isPending}
+                    onClick={() => {
+                      if (!confirm(`#${it.id} 문의를 삭제할까요?`)) return;
+                      deleteM.mutate(it.id);
+                    }}
+                    className="shrink-0 rounded-xl border border-rose-500/35 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-950/70 disabled:opacity-40"
+                  >
+                    삭제
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -171,7 +242,20 @@ export default function SuperInquiryPage() {
 
       {selectedId != null && detailQ.data ? (
         <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-5 sm:p-6">
-          <h2 className="text-sm font-semibold text-slate-200">상세</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-200">상세</h2>
+            <button
+              type="button"
+              disabled={deleteM.isPending}
+              onClick={() => {
+                if (!confirm(`#${selectedId} 문의를 삭제할까요?`)) return;
+                deleteM.mutate(selectedId);
+              }}
+              className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-950/50 disabled:opacity-40"
+            >
+              삭제
+            </button>
+          </div>
           <p className="mt-2 text-base font-medium text-slate-100">{detailQ.data.ticket.title}</p>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-400">{detailQ.data.ticket.body}</p>
           {detailQ.data.ticket.admin_reply ? (
