@@ -30,6 +30,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     login_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # 파트너 콘솔 트리 등에만 쓰는 임의 직책 라벨(마스터·본사·스태프 등). 권한/정산과 무관.
+    team_role_label: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     site_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -50,6 +52,27 @@ class User(Base):
     # 오프라인 매장(선불 지급/회수) — 슈퍼관리자만 토글
     is_store_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # 이 회원에 대해 총판·스태프의 목록/상세 지급·회수 허용(슈퍼는 항상 가능). 사이트·운영자 플래그와 AND.
+    member_list_wallet_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    # 하부 파트너 관리자용: 좁은 메뉴·비밀번호만 설정·요율 조정 불가 등 (슈퍼가 계정별로 켬)
+    admin_partner_limited_ui: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # 총판·스태프 전용: 회원 목록/상세에서 게임머니 지급·회수·프로필 수정 가능 여부 (사이트 정책과 AND)
+    admin_wallet_credit_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    admin_wallet_debit_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    admin_member_profile_edit_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
 
     # 2FA — Google OTP (TOTP)

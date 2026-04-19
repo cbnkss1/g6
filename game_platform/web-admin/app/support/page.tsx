@@ -1,26 +1,16 @@
-import Link from "next/link";
+import { SupportTicketDashboard } from "@/components/admin/SupportTicketDashboard";
 
 export default function SupportPage() {
   return (
-    <div className="glass-card-sm max-w-lg space-y-4 p-6">
-      <h1 className="text-lg font-semibold text-slate-100">고객센터</h1>
-      <p className="text-sm text-slate-400">
-        티켓·1:1 문의 백오피스는 추후 연동 예정입니다. 운영 중 회원·입출금 처리는 아래 메뉴를 이용하세요.
-      </p>
-      <div className="flex flex-wrap gap-2 text-sm">
-        <Link href="/members" className="text-premium hover:underline">
-          회원
-        </Link>
-        <Link href="/cash" className="text-premium hover:underline">
-          입출금
-        </Link>
-        <Link href="/betting" className="text-premium hover:underline">
-          배팅 로그
-        </Link>
-        <Link href="/audit" className="text-premium hover:underline">
-          감사 로그
-        </Link>
-      </div>
+    <div className="quantum-shell mx-auto max-w-[1440px] space-y-6 px-3 py-4 sm:px-5">
+      <header className="quantum-hero px-5 py-5 sm:px-7 sm:py-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-400/90">Support</p>
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">고객센터 · 1:1 문의</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+          플레이어가 제출한 문의를 확인하고 답변합니다. 목록은 자동으로 갱신됩니다.
+        </p>
+      </header>
+      <SupportTicketDashboard />
     </div>
   );
 }

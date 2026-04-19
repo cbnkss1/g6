@@ -7,7 +7,7 @@ import { isNavItemActive } from "@/lib/navActive";
 
 const BOTTOM_ITEMS = [
   { href: "/", label: "홈", icon: "◈" },
-  { href: "/cash", label: "입출금", icon: "$" },
+  { href: "/cash/request", label: "입출금", icon: "$" },
   { href: "/betting", label: "배팅", icon: "◆" },
   { href: "/agents", label: "트리", icon: "▦" },
   { href: "/members", label: "회원", icon: "◉" },

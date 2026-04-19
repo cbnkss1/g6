@@ -28,3 +28,12 @@ def kst_calendar_window_utc(d0: date, d1: date) -> Tuple[datetime, datetime]:
     t0_local = datetime.combine(d0, time.min, tzinfo=KST)
     t1_local = datetime.combine(d1, time.min, tzinfo=KST) + timedelta(days=1)
     return t0_local.astimezone(timezone.utc), t1_local.astimezone(timezone.utc)
+
+
+def kst_today_date(now: Optional[datetime] = None) -> date:
+    """KST 달력 기준 ‘오늘’ 날짜."""
+    if now is None:
+        now = now_utc()
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.astimezone(KST).date()

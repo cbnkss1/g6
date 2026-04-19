@@ -62,9 +62,12 @@ function rowsFromApi(rates: RateRow[]): RateRow[] {
 export function MemberRollingRatesPanel({
   userId,
   variant = "default",
+  readOnly = false,
 }: {
   userId: number;
   variant?: "default" | "memberDetail";
+  /** 하부 관리자(파트너) 등 — 요율 조회만, 저장 불가 */
+  readOnly?: boolean;
 }) {
   const token = useAuthStore((s) => s.token);
   const role = useAuthStore((s) => s.user?.role ?? "");
@@ -240,13 +243,20 @@ export function MemberRollingRatesPanel({
           <p className="mt-1 text-xs text-slate-500">
             반드시 이 블록의 「요율 저장」으로 저장하세요. 상단 「변경 저장」은 프로필만 저장합니다.
           </p>
+          {readOnly ? (
+            <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/95">
+              이 계정은 <strong>요율 조회 전용</strong>입니다. 수치 변경은 상위 관리자에게 요청하세요.
+            </p>
+          ) : null}
         </div>
-        <Link
-          href="/rolling"
-          className="shrink-0 rounded-lg border border-slate-500/40 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-200 hover:border-amber-400/40 hover:text-amber-100"
-        >
-          팀 롤링 화면
-        </Link>
+        {!readOnly ? (
+          <Link
+            href="/rolling"
+            className="shrink-0 rounded-lg border border-slate-500/40 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-200 hover:border-amber-400/40 hover:text-amber-100"
+          >
+            팀 롤링 화면
+          </Link>
+        ) : null}
       </div>
 
       {q.isPending ? <p className="text-sm text-slate-400">요율 불러오는 중…</p> : null}
@@ -254,25 +264,27 @@ export function MemberRollingRatesPanel({
 
       {!q.isPending && !q.isError ? (
         <>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={addRow}
-              className="rounded-lg border border-slate-500/50 bg-slate-800/40 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700/50"
-            >
-              종목 행 추가
-            </button>
-            <button
-              type="button"
-              disabled={saveM.isPending}
-              onClick={() => {
-                void saveM.mutate();
-              }}
-              className="rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-md hover:opacity-95 disabled:opacity-50"
-            >
-              {saveM.isPending ? "저장 중…" : "요율 저장"}
-            </button>
-          </div>
+          {!readOnly ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addRow}
+                className="rounded-lg border border-slate-500/50 bg-slate-800/40 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700/50"
+              >
+                종목 행 추가
+              </button>
+              <button
+                type="button"
+                disabled={saveM.isPending}
+                onClick={() => {
+                  void saveM.mutate();
+                }}
+                className="rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-md hover:opacity-95 disabled:opacity-50"
+              >
+                {saveM.isPending ? "저장 중…" : "요율 저장"}
+              </button>
+            </div>
+          ) : null}
           {saveM.isError ? (
             <p className="text-sm text-red-400">{saveM.error instanceof Error ? saveM.error.message : "저장 실패"}</p>
           ) : null}
@@ -286,7 +298,7 @@ export function MemberRollingRatesPanel({
                   <th className="px-3 py-2.5 font-medium">종목 코드</th>
                   <th className="px-3 py-2.5 font-mono font-medium">롤링 (%)</th>
                   <th className="px-3 py-2.5 font-mono font-medium">루징 (%)</th>
-                  <th className="w-12 px-2 py-2.5" />
+                  {!readOnly ? <th className="w-12 px-2 py-2.5" /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -306,51 +318,67 @@ export function MemberRollingRatesPanel({
                         )}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          value={row.game_type}
-                          onChange={(e) => updateRow(i, "game_type", e.target.value)}
-                          placeholder="BACCARAT"
-                          list={`gp-rolling-hints-${userId}`}
-                          className="w-full min-w-[120px] rounded-lg border border-slate-600/50 bg-slate-900/80 px-2 py-1.5 font-mono text-sm text-slate-100 placeholder:text-slate-600"
-                        />
+                        {readOnly ? (
+                          <span className="font-mono text-sm text-slate-200">{row.game_type || "—"}</span>
+                        ) : (
+                          <input
+                            value={row.game_type}
+                            onChange={(e) => updateRow(i, "game_type", e.target.value)}
+                            placeholder="BACCARAT"
+                            list={`gp-rolling-hints-${userId}`}
+                            className="w-full min-w-[120px] rounded-lg border border-slate-600/50 bg-slate-900/80 px-2 py-1.5 font-mono text-sm text-slate-100 placeholder:text-slate-600"
+                          />
+                        )}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          value={row.rolling_rate_percent}
-                          onChange={(e) => updateRow(i, "rolling_rate_percent", e.target.value)}
-                          inputMode="decimal"
-                          className="w-full max-w-[110px] rounded-lg border border-slate-600/50 bg-slate-900/80 px-2 py-1.5 font-mono text-sm text-slate-100"
-                        />
+                        {readOnly ? (
+                          <span className="font-mono text-sm text-slate-200">{row.rolling_rate_percent}</span>
+                        ) : (
+                          <input
+                            value={row.rolling_rate_percent}
+                            onChange={(e) => updateRow(i, "rolling_rate_percent", e.target.value)}
+                            inputMode="decimal"
+                            className="w-full max-w-[110px] rounded-lg border border-slate-600/50 bg-slate-900/80 px-2 py-1.5 font-mono text-sm text-slate-100"
+                          />
+                        )}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          value={row.losing_rate_percent}
-                          onChange={(e) => updateRow(i, "losing_rate_percent", e.target.value)}
-                          inputMode="decimal"
-                          className="w-full max-w-[110px] rounded-lg border border-slate-600/50 bg-slate-900/80 px-2 py-1.5 font-mono text-sm text-slate-100"
-                        />
+                        {readOnly ? (
+                          <span className="font-mono text-sm text-slate-200">{row.losing_rate_percent}</span>
+                        ) : (
+                          <input
+                            value={row.losing_rate_percent}
+                            onChange={(e) => updateRow(i, "losing_rate_percent", e.target.value)}
+                            inputMode="decimal"
+                            className="w-full max-w-[110px] rounded-lg border border-slate-600/50 bg-slate-900/80 px-2 py-1.5 font-mono text-sm text-slate-100"
+                          />
+                        )}
                       </td>
-                      <td className="px-2 py-2 align-top">
-                        <button
-                          type="button"
-                          onClick={() => removeRow(i)}
-                          className="text-xs text-slate-500 hover:text-rose-400"
-                        >
-                          삭제
-                        </button>
-                      </td>
+                      {!readOnly ? (
+                        <td className="px-2 py-2 align-top">
+                          <button
+                            type="button"
+                            onClick={() => removeRow(i)}
+                            className="text-xs text-slate-500 hover:text-rose-400"
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            <datalist id={`gp-rolling-hints-${userId}`}>
-              {PRIMARY_CATEGORIES.map((g) => (
-                <option key={g.key} value={g.key} />
-              ))}
-              <option value="MINIGAME_GENERIC" />
-              <option value="CASINO" />
-            </datalist>
+            {!readOnly ? (
+              <datalist id={`gp-rolling-hints-${userId}`}>
+                {PRIMARY_CATEGORIES.map((g) => (
+                  <option key={g.key} value={g.key} />
+                ))}
+                <option value="MINIGAME_GENERIC" />
+                <option value="CASINO" />
+              </datalist>
+            ) : null}
           </div>
         </>
       ) : null}

@@ -56,7 +56,10 @@ from app.services.otp_service import generate_secret, get_provisioning_uri, veri
 from app.services.risk_engine import check_login_attempt, get_blocked_ips
 from app.services.player_presence import ACTIVE_SECONDS as PLAYER_PRESENCE_TTL_SEC
 from app.services.player_presence import list_player_presence_rows
-from app.services.settlement_reporting import get_rolling_settlement_lines
+from app.services.settlement_reporting import (
+    get_rolling_ledger_detail_lines,
+    get_rolling_settlement_lines,
+)
 from app.services.total_revenue_service import get_total_revenue_table
 from app.services.site_policy_service import (
     SiteCashPolicyError,
@@ -96,20 +99,43 @@ def _site_member_admin_flags(db: Session, site_uuid: uuid.UUID) -> tuple[bool, b
     return wallet, edit
 
 
-def _viewer_member_ui_permissions(db: Session, viewer: User, target_site_id: uuid.UUID) -> tuple[bool, bool]:
-    """슈퍼관리자는 항상 (True, True). 그 외는 대상 사이트 `admin_ui` 플래그."""
+def _viewer_member_ops_effective(
+    db: Session,
+    viewer: User,
+    target_site_id: uuid.UUID,
+) -> tuple[bool, bool, bool]:
+    """
+    회원을 대상으로 할 때 viewer의 (게임머니 지급, 회수, 상세수정) 가능 여부.
+    사이트 `admin_ui` 플래그와 계정별 플래그(총판·스태프)를 AND.
+    슈퍼관리자는 항상 (True, True, True).
+    요율만 있는 플레이어(하부 파트너)는 지급·회수·상세수정 플래그 없음 — 총판·스태프만.
+    """
     if viewer.role == USER_ROLE_SUPER_ADMIN:
-        return True, True
-    return _site_member_admin_flags(db, target_site_id)
+        return True, True, True
+    w_site, e_site = _site_member_admin_flags(db, target_site_id)
+    if viewer.role not in (USER_ROLE_OWNER, USER_ROLE_STAFF):
+        return False, False, False
+    cr = bool(viewer.admin_wallet_credit_enabled)
+    db_ = bool(viewer.admin_wallet_debit_enabled)
+    ed = bool(viewer.admin_member_profile_edit_enabled)
+    return (w_site and cr, w_site and db_, e_site and ed)
 
 
-def _effective_can_edit_profile(viewer: User, target: User, can_edit_site_flag: bool) -> bool:
-    """사이트 플래그 + 비슈퍼는 플레이어 회원만 상세 수정 UI·PATCH 허용."""
-    if not can_edit_site_flag:
-        return False
+def _apply_member_target_wallet_flags(
+    viewer: User, target: User, wc: bool, wd: bool
+) -> tuple[bool, bool]:
+    """대상 회원의 member_list_wallet_enabled — 비슈퍼일 때만 꺼지면 지급·회수 불가. 슈퍼는 항상 viewer 권한 그대로."""
     if viewer.role == USER_ROLE_SUPER_ADMIN:
-        return True
-    return target.role == USER_ROLE_PLAYER
+        return wc, wd
+    if not bool(getattr(target, "member_list_wallet_enabled", True)):
+        return False, False
+    return wc, wd
+
+
+def _reject_if_partner_limited_ui(user: User, detail: str) -> None:
+    """슈퍼가 켠 제한 모드이거나, 요율로 들어온 플레이어(하부 파트너) — 동일 제한."""
+    if bool(getattr(user, "admin_partner_limited_ui", False)) or user.role == USER_ROLE_PLAYER:
+        raise HTTPException(status_code=403, detail=detail)
 
 
 def _player_online_rows_for_admin(db: Session, user: User) -> List[Dict[str, Any]]:
@@ -146,7 +172,7 @@ class WalletAdjustBody(BaseModel):
 
 
 class AdminUserProfilePatchBody(BaseModel):
-    """회원 상세 수정 (슈퍼는 항상 허용, 그 외는 `member_profile_edit_enabled` + 플레이어만)."""
+    """회원 상세 수정 (슈퍼관리자 전용 API)."""
 
     display_name: Optional[str] = None
     phone: Optional[str] = None
@@ -186,11 +212,32 @@ class MemberLevelPatchBody(BaseModel):
     member_level: int
 
 
+class AdminMemberOpsPatchBody(BaseModel):
+    """총판·스태프 계정별 회원목록 지급·회수·상세수정 권한 (사이트 정책과 AND)."""
+
+    admin_wallet_credit_enabled: Optional[bool] = None
+    admin_wallet_debit_enabled: Optional[bool] = None
+    admin_member_profile_edit_enabled: Optional[bool] = None
+
+
+class MemberListWalletPatchBody(BaseModel):
+    """대상 회원별 — 목록·상세에서 지급·회수 허용(총판·스태프에만 제한, 슈퍼는 항상 가능)."""
+
+    member_list_wallet_enabled: bool
+
+
+class PartnerLimitedUiPatchBody(BaseModel):
+    """슈퍼 전용: 하부 관리자(파트너) 제한 UI 모드."""
+
+    admin_partner_limited_ui: bool
+
+
 class UserBetLimitsOverridePatchBody(BaseModel):
     overrides: Dict[str, Any]
 
 
-def _admin_can_view_site_bet_limits(u: User) -> bool:
+def _admin_can_view_site_bet_limits(_db: Session, u: User) -> bool:
+    """사이트 한도·정책·어드민 IP 등 — 총판·스태프·슈퍼만 (하부 플레이어 제외)."""
     return u.role in (USER_ROLE_SUPER_ADMIN, USER_ROLE_OWNER, USER_ROLE_STAFF)
 
 
@@ -314,11 +361,14 @@ def admin_settlements_total_revenue_table(
 
 @router.get(
     "/settlements/rolling-lines",
-    summary="파트너 롤링 정산 라인 (유효배팅×요율=지급 검증)",
+    summary="파트너 롤링 정산 라인 (수령인별 합산, 기간·종목·KST)",
 )
 def admin_settlement_rolling_lines(
     user=Depends(require_admin_user),
     db: Session = Depends(get_db),
+    date_from: Optional[date] = Query(None, description="시작일 (KST), 미지정 시 오늘"),
+    date_to: Optional[date] = Query(None, description="종료일 (KST), 미지정 시 오늘"),
+    vertical: str = Query("all", description="casino|slot|powerball|sports|all"),
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN
     if super_admin:
@@ -327,6 +377,9 @@ def admin_settlement_rolling_lines(
             site_id=None,
             super_admin=True,
             scope_subtree_user_ids=None,
+            date_from=date_from,
+            date_to=date_to,
+            vertical=vertical or "all",
         )
     subtree = downward_subtree_user_ids(db, user.id)
     return get_rolling_settlement_lines(
@@ -334,6 +387,46 @@ def admin_settlement_rolling_lines(
         site_id=user.site_id,
         super_admin=False,
         scope_subtree_user_ids=subtree,
+        date_from=date_from,
+        date_to=date_to,
+        vertical=vertical or "all",
+    )
+
+
+@router.get(
+    "/settlements/rolling-lines/detail",
+    summary="롤링 원장 건별 상세 (수령인·기간·종목)",
+)
+def admin_settlement_rolling_lines_detail(
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    recipient_user_id: int = Query(..., ge=1),
+    date_from: date = Query(..., description="시작일 (KST)"),
+    date_to: date = Query(..., description="종료일 (KST)"),
+    vertical: str = Query("all", description="casino|slot|powerball|sports|all"),
+) -> Dict[str, Any]:
+    super_admin = user.role == USER_ROLE_SUPER_ADMIN
+    if super_admin:
+        return get_rolling_ledger_detail_lines(
+            db,
+            site_id=None,
+            super_admin=True,
+            scope_subtree_user_ids=None,
+            recipient_user_id=recipient_user_id,
+            date_from=date_from,
+            date_to=date_to,
+            vertical=vertical or "all",
+        )
+    subtree = downward_subtree_user_ids(db, user.id)
+    return get_rolling_ledger_detail_lines(
+        db,
+        site_id=user.site_id,
+        super_admin=False,
+        scope_subtree_user_ids=subtree,
+        recipient_user_id=recipient_user_id,
+        date_from=date_from,
+        date_to=date_to,
+        vertical=vertical or "all",
     )
 
 
@@ -477,8 +570,9 @@ def admin_list_users(
 
     items: List[Dict[str, Any]] = []
     for u in rows:
-        can_w, can_e_site = _viewer_member_ui_permissions(db, user, u.site_id)
-        can_e = _effective_can_edit_profile(user, u, can_e_site)
+        wc, wd, _ce_site = _viewer_member_ops_effective(db, user, u.site_id)
+        wc, wd = _apply_member_target_wallet_flags(user, u, wc, wd)
+        can_e = user.role == USER_ROLE_SUPER_ADMIN
         items.append(
             {
                 "id": u.id,
@@ -493,7 +587,10 @@ def admin_list_users(
                 "referrer_id": u.referrer_id,
                 "referrer_login_id": ref_login.get(u.referrer_id) if u.referrer_id else None,
                 "member_level": int(u.member_level or 1),
-                "can_wallet_adjust": can_w,
+                "member_list_wallet_enabled": bool(u.member_list_wallet_enabled),
+                "can_wallet_credit": wc,
+                "can_wallet_debit": wd,
+                "can_wallet_adjust": wc or wd,
                 "can_edit_profile": can_e,
             }
         )
@@ -501,13 +598,161 @@ def admin_list_users(
     return {"items": items, "limit": limit, "offset": offset, "member_list_meta": meta}
 
 
+@router.get("/staff/member-ops", summary="총판·스태프별 회원목록 지급·회수·상세수정 권한 목록")
+def admin_list_staff_member_ops(
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    site_id: Optional[str] = Query(None, description="슈퍼만: 대상 사이트 UUID. 비우면 본인 소속 사이트"),
+) -> Dict[str, Any]:
+    if user.role == USER_ROLE_SUPER_ADMIN:
+        if site_id and site_id.strip():
+            try:
+                sid = uuid.UUID(site_id.strip())
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail="site_id 형식이 올바르지 않습니다.") from e
+        else:
+            sid = user.site_id
+    else:
+        if site_id and site_id.strip():
+            raise HTTPException(status_code=403, detail="site_id 는 슈퍼관리자만 지정할 수 있습니다.")
+        sid = user.site_id
+
+    stmt = select(User).where(
+        User.site_id == sid,
+        User.role.in_((USER_ROLE_OWNER, USER_ROLE_STAFF)),
+    )
+    if user.role != USER_ROLE_SUPER_ADMIN:
+        allowed = downward_subtree_user_ids(db, user.id)
+        stmt = stmt.where(User.id.in_(allowed))
+    stmt = stmt.order_by(User.id.desc())
+    rows = list(db.scalars(stmt).all())
+    return {
+        "items": [
+            {
+                "id": u.id,
+                "login_id": u.login_id,
+                "display_name": u.display_name,
+                "role": u.role,
+                "referrer_id": u.referrer_id,
+                "admin_wallet_credit_enabled": bool(u.admin_wallet_credit_enabled),
+                "admin_wallet_debit_enabled": bool(u.admin_wallet_debit_enabled),
+                "admin_member_profile_edit_enabled": bool(u.admin_member_profile_edit_enabled),
+            }
+            for u in rows
+        ],
+        "site_id": str(sid),
+    }
+
+
+@router.patch("/users/{user_id}/admin-member-ops", summary="총판·스태프 계정의 회원목록 권한 플래그")
+def admin_patch_staff_member_ops(
+    user_id: int,
+    body: AdminMemberOpsPatchBody,
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    assert_viewer_may_access_target_user(db, user, user_id)
+    if target.role not in (USER_ROLE_OWNER, USER_ROLE_STAFF):
+        raise HTTPException(status_code=400, detail="총판·스태프 계정만 설정할 수 있습니다.")
+    if user.role != USER_ROLE_SUPER_ADMIN:
+        if target.site_id != user.site_id:
+            raise HTTPException(status_code=403, detail="다른 사이트 계정입니다.")
+        allowed = downward_subtree_user_ids(db, user.id)
+        if user_id not in allowed:
+            raise HTTPException(status_code=403, detail="하위 조직의 계정만 변경할 수 있습니다.")
+
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="변경할 항목이 없습니다.")
+    if "admin_wallet_credit_enabled" in data:
+        target.admin_wallet_credit_enabled = bool(data["admin_wallet_credit_enabled"])
+    if "admin_wallet_debit_enabled" in data:
+        target.admin_wallet_debit_enabled = bool(data["admin_wallet_debit_enabled"])
+    if "admin_member_profile_edit_enabled" in data:
+        target.admin_member_profile_edit_enabled = bool(data["admin_member_profile_edit_enabled"])
+    db.commit()
+    db.refresh(target)
+    return {
+        "id": target.id,
+        "login_id": target.login_id,
+        "admin_wallet_credit_enabled": target.admin_wallet_credit_enabled,
+        "admin_wallet_debit_enabled": target.admin_wallet_debit_enabled,
+        "admin_member_profile_edit_enabled": target.admin_member_profile_edit_enabled,
+    }
+
+
+@router.patch(
+    "/users/{user_id}/member-list-wallet",
+    summary="회원별 목록·상세 지급·회수 허용 (슈퍼·총판·스태프, 하향 범위만)",
+)
+def patch_member_list_wallet_enabled(
+    user_id: int,
+    body: MemberListWalletPatchBody,
+    user: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    if user.role not in (USER_ROLE_SUPER_ADMIN, USER_ROLE_OWNER, USER_ROLE_STAFF):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    assert_viewer_may_access_target_user(db, user, user_id)
+    target.member_list_wallet_enabled = bool(body.member_list_wallet_enabled)
+    AuditService.log(
+        db,
+        actor=user,
+        action="MEMBER_LIST_WALLET_FLAG",
+        target_type="USER",
+        target_id=str(target.id),
+        note=f"member_list_wallet_enabled={target.member_list_wallet_enabled}",
+    )
+    db.commit()
+    db.refresh(target)
+    return {"id": target.id, "member_list_wallet_enabled": target.member_list_wallet_enabled}
+
+
+@router.patch(
+    "/users/{user_id}/partner-limited-ui",
+    summary="슈퍼: 하부 관리자(파트너) 제한 UI — 좁은 메뉴·비밀번호만·요율 조정 불가",
+)
+def patch_partner_limited_ui(
+    user_id: int,
+    body: PartnerLimitedUiPatchBody,
+    user: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    if user.role != USER_ROLE_SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="슈퍼관리자만 변경할 수 있습니다.")
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    assert_viewer_may_access_target_user(db, user, user_id)
+    target.admin_partner_limited_ui = bool(body.admin_partner_limited_ui)
+    AuditService.log(
+        db,
+        actor=user,
+        action="PARTNER_LIMITED_UI",
+        target_type="USER",
+        target_id=str(target.id),
+        note=f"admin_partner_limited_ui={target.admin_partner_limited_ui}",
+    )
+    db.commit()
+    db.refresh(target)
+    return {"id": target.id, "admin_partner_limited_ui": target.admin_partner_limited_ui}
+
+
 def _admin_user_profile_payload(db: Session, viewer: User, target: User) -> Dict[str, Any]:
     ref_login: Optional[str] = None
     if target.referrer_id is not None:
         ref = db.get(User, target.referrer_id)
         ref_login = ref.login_id if ref else None
-    can_w, can_e_site = _viewer_member_ui_permissions(db, viewer, target.site_id)
-    can_e = _effective_can_edit_profile(viewer, target, can_e_site)
+    wc, wd, _ce_site = _viewer_member_ops_effective(db, viewer, target.site_id)
+    wc, wd = _apply_member_target_wallet_flags(viewer, target, wc, wd)
+    # 회원 프로필·상세 필드 수정은 슈퍼관리자만 (총판·스태프는 조회·지급·회수·롤링 등만)
+    can_e = viewer.role == USER_ROLE_SUPER_ADMIN
     return {
         "id": target.id,
         "login_id": target.login_id,
@@ -521,12 +766,19 @@ def _admin_user_profile_payload(db: Session, viewer: User, target: User) -> Dict
         "referrer_id": target.referrer_id,
         "referrer_login_id": ref_login,
         "member_level": int(target.member_level or 1),
+        "member_list_wallet_enabled": bool(target.member_list_wallet_enabled),
         "phone": target.phone,
         "bank_name": target.bank_name,
         "bank_account": target.bank_account,
         "account_holder": target.account_holder,
         "telegram_id": target.telegram_id,
-        "permissions": {"can_wallet_adjust": can_w, "can_edit_profile": can_e},
+        "admin_partner_limited_ui": bool(getattr(target, "admin_partner_limited_ui", False)),
+        "permissions": {
+            "can_wallet_credit": wc,
+            "can_wallet_debit": wd,
+            "can_wallet_adjust": wc or wd,
+            "can_edit_profile": can_e,
+        },
     }
 
 
@@ -543,7 +795,7 @@ def admin_user_profile(
     return _admin_user_profile_payload(db, user, target)
 
 
-@router.patch("/users/{user_id}/profile", summary="회원 상세 수정 (사이트 플래그·슈퍼 예외)")
+@router.patch("/users/{user_id}/profile", summary="회원 상세 수정 (슈퍼관리자 전용)")
 def admin_user_profile_patch(
     user_id: int,
     body: AdminUserProfilePatchBody,
@@ -558,14 +810,11 @@ def admin_user_profile_patch(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     assert_viewer_may_access_target_user(db, user, user_id)
-    _, can_edit_site = _viewer_member_ui_permissions(db, user, target.site_id)
-    if not _effective_can_edit_profile(user, target, can_edit_site):
-        if not can_edit_site:
-            raise HTTPException(
-                status_code=403,
-                detail="회원 상세 수정이 이 사이트에서 비활성화되어 있습니다.",
-            )
-        raise HTTPException(status_code=403, detail="플레이어 회원만 수정할 수 있습니다.")
+    if user.role != USER_ROLE_SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="회원 프로필·상세 정보 수정은 슈퍼관리자만 가능합니다.",
+        )
 
     def _clip_str(val: Any, max_len: int) -> Optional[str]:
         if val is None:
@@ -609,8 +858,8 @@ def admin_user_profile_patch(
         ml = int(data["member_level"])
         if ml < 1 or ml > 99:
             raise HTTPException(status_code=400, detail="member_level 은 1~99 입니다.")
-        if target.role != USER_ROLE_PLAYER and user.role != USER_ROLE_SUPER_ADMIN:
-            raise HTTPException(status_code=403, detail="플레이어 회원만 레벨을 변경할 수 있습니다.")
+        if target.role != USER_ROLE_PLAYER:
+            raise HTTPException(status_code=400, detail="플레이어 회원만 레벨을 변경할 수 있습니다.")
         target.member_level = ml
         after["member_level"] = target.member_level
     if "is_active" in data and data["is_active"] is not None:
@@ -644,17 +893,26 @@ async def admin_user_wallet_adjust(
     pre = db.get(User, user_id)
     if pre is None:
         raise HTTPException(status_code=404, detail="user not found")
-    can_wallet, _ = _viewer_member_ui_permissions(db, user, pre.site_id)
-    if not can_wallet:
+    if user.role != USER_ROLE_SUPER_ADMIN and not bool(pre.member_list_wallet_enabled):
         raise HTTPException(
             status_code=403,
-            detail="이 사이트에서는 어드민 지급·회수가 비활성화되어 있습니다.",
+            detail="이 회원은 지급·회수 대상에서 제외되어 있습니다.",
         )
-    _admin_may_access_cash_request_user(db, user, user_id)
-
     direction = (body.direction or "").strip().lower()
     if direction not in ("credit", "debit"):
         raise HTTPException(status_code=400, detail="direction must be credit or debit")
+    wc, wd, _ = _viewer_member_ops_effective(db, user, pre.site_id)
+    if direction == "credit" and not wc:
+        raise HTTPException(
+            status_code=403,
+            detail="게임머니 지급 권한이 없습니다. (사이트 정책 또는 본인 계정 설정)",
+        )
+    if direction == "debit" and not wd:
+        raise HTTPException(
+            status_code=403,
+            detail="게임머니 회수 권한이 없습니다. (사이트 정책 또는 본인 계정 설정)",
+        )
+    _admin_may_access_cash_request_user(db, user, user_id)
     try:
         amt = Decimal(str(body.amount).strip())
     except Exception as e:
@@ -807,15 +1065,13 @@ def replace_user_rolling_rates(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     assert_viewer_may_access_target_user(db, user, user_id)
+    _reject_if_partner_limited_ui(
+        user,
+        "하부 관리자 모드에서는 요율을 조정할 수 없습니다. 조회만 가능합니다.",
+    )
     if user.role not in (USER_ROLE_SUPER_ADMIN, USER_ROLE_OWNER, USER_ROLE_STAFF):
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
-    _, can_edit_site = _viewer_member_ui_permissions(db, user, target.site_id)
-    if not _effective_can_edit_profile(user, target, can_edit_site):
-        if not can_edit_site:
-            raise HTTPException(
-                status_code=403,
-                detail="회원 상세 수정이 이 사이트에서 비활성화되어 있습니다.",
-            )
+    if target.role != USER_ROLE_PLAYER:
         raise HTTPException(status_code=403, detail="플레이어 회원만 요율을 변경할 수 있습니다.")
 
     if user.role != USER_ROLE_SUPER_ADMIN and target.id != user.id:
@@ -867,10 +1123,10 @@ def get_site_bet_limits(
     user: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    if not _admin_can_view_site_bet_limits(user):
+    if not _admin_can_view_site_bet_limits(db, user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="배팅 한도 조회는 슈퍼/총판/스태프만 가능합니다.",
+            detail="배팅 한도 조회 권한이 없습니다.",
         )
     if user.role == USER_ROLE_SUPER_ADMIN:
         try:
@@ -930,7 +1186,7 @@ def get_site_policies(
     user: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    if not _admin_can_view_site_bet_limits(user):
+    if not _admin_can_view_site_bet_limits(db, user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="사이트 정책 조회는 슈퍼/총판/스태프만 가능합니다.",
@@ -999,7 +1255,7 @@ def list_admin_allowed_ips(
     user: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    if not _admin_can_view_site_bet_limits(user):
+    if not _admin_can_view_site_bet_limits(db, user):
         raise HTTPException(status_code=403, detail="조회 권한이 없습니다.")
     sid = _site_tool_target_id(user, site_id)
     rows = list(
@@ -1078,7 +1334,7 @@ def get_user_bet_limits(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     assert_viewer_may_access_target_user(db, user, user_id)
-    if not _admin_can_view_site_bet_limits(user):
+    if not _admin_can_view_site_bet_limits(db, user):
         raise HTTPException(status_code=403, detail="배팅 한도 조회 권한이 없습니다.")
     site = db.get(SiteConfig, target.site_id)
     eff: Dict[str, Any] = {}
@@ -1096,7 +1352,7 @@ def get_user_bet_limits(
     }
 
 
-@router.patch("/users/{user_id}/member-level", summary="플레이어 회원 레벨 (보너스 정책)")
+@router.patch("/users/{user_id}/member-level", summary="플레이어 회원 레벨 (슈퍼관리자 전용)")
 def patch_user_member_level(
     user_id: int,
     body: MemberLevelPatchBody,
@@ -1107,14 +1363,8 @@ def patch_user_member_level(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     assert_viewer_may_access_target_user(db, user, user_id)
-    if user.role not in (USER_ROLE_SUPER_ADMIN, USER_ROLE_OWNER, USER_ROLE_STAFF):
-        raise HTTPException(status_code=403, detail="권한이 없습니다.")
-    _, can_edit = _viewer_member_ui_permissions(db, user, target.site_id)
-    if user.role != USER_ROLE_SUPER_ADMIN and not can_edit:
-        raise HTTPException(
-            status_code=403,
-            detail="회원 상세 수정이 이 사이트에서 비활성화되어 있습니다.",
-        )
+    if user.role != USER_ROLE_SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="회원 레벨 변경은 슈퍼관리자만 가능합니다.")
     if target.role != USER_ROLE_PLAYER:
         raise HTTPException(status_code=400, detail="플레이어 회원만 레벨을 설정할 수 있습니다.")
     if body.member_level < 1 or body.member_level > 99:
@@ -1221,6 +1471,10 @@ def list_cash_requests(
     request_type: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: Optional[str] = Query(
+        None,
+        description="recent=접수시간 최근순(최근충전·환전내역). 미지정 시 상태 우선 정렬(콘솔 대기열용)",
+    ),
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN
     stmt = select(CashRequest, User.login_id).join(User, CashRequest.user_id == User.id)
@@ -1236,7 +1490,10 @@ def list_cash_requests(
             stmt = stmt.where(CashRequest.status == st)
     if request_type:
         stmt = stmt.where(CashRequest.request_type == request_type.upper())
-    stmt = stmt.order_by(CashRequest.status.asc(), CashRequest.created_at.desc())
+    if (sort or "").strip().lower() == "recent":
+        stmt = stmt.order_by(CashRequest.created_at.desc())
+    else:
+        stmt = stmt.order_by(CashRequest.status.asc(), CashRequest.created_at.desc())
     stmt = stmt.offset(offset).limit(limit)
     rows = db.execute(stmt).all()
     items = []
@@ -1503,6 +1760,10 @@ def otp_setup(
     user=Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
+    _reject_if_partner_limited_ui(
+        user,
+        "하부 관리자 모드에서는 OTP 설정을 변경할 수 없습니다. 비밀번호만 변경 가능합니다.",
+    )
     if user.otp_enabled:
         raise HTTPException(status_code=400, detail="OTP가 이미 활성화되어 있습니다. 먼저 비활성화하세요.")
     secret = generate_secret()
@@ -1518,6 +1779,10 @@ def otp_verify_enable(
     user=Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
+    _reject_if_partner_limited_ui(
+        user,
+        "하부 관리자 모드에서는 OTP 설정을 변경할 수 없습니다. 비밀번호만 변경 가능합니다.",
+    )
     if not user.otp_secret:
         raise HTTPException(status_code=400, detail="먼저 /otp/setup을 호출하세요.")
     if not verify_totp(user.otp_secret, body.code):
@@ -1535,6 +1800,10 @@ def otp_disable(
     user=Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
+    _reject_if_partner_limited_ui(
+        user,
+        "하부 관리자 모드에서는 OTP 설정을 변경할 수 없습니다. 비밀번호만 변경 가능합니다.",
+    )
     if not user.otp_enabled:
         raise HTTPException(status_code=400, detail="OTP가 비활성화 상태입니다.")
     if not verify_totp(user.otp_secret, body.code):

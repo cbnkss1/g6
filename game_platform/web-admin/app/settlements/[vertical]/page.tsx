@@ -1,11 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { notFound, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
+import { formatIsoAsKst, kstTodayYmd } from "@/lib/formatKst";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
+
+const VALID_VERTICALS = ["casino", "slot", "powerball", "sports"] as const;
+type SettlementVertical = (typeof VALID_VERTICALS)[number];
+
+const TITLES: Record<SettlementVertical, string> = {
+  casino: "카지노 정산",
+  slot: "슬롯 정산",
+  powerball: "파워볼(미니게임) 정산",
+  sports: "스포츠 정산",
+};
 
 /** GET /admin/settlements/total-revenue-table */
 type TotalRevenueResponse = {
@@ -36,13 +47,11 @@ type TotalRevenueResponse = {
     losing_rate_percent: string;
     bet_settlement: string;
     has_children: boolean;
-    /** full_subtree: 선택 상위 본인+하부 합산 / direct_child: 직속 한 줄 */
     row_scope?: string;
   }>;
   totals: Record<string, string>;
 };
 
-/** GET /admin/settlements/rolling-lines — 수령인별 합산 */
 type RollingRecipientRow = {
   user_id: number;
   login_id: string;
@@ -53,8 +62,10 @@ type RollingRecipientRow = {
 type RollingApiResponse = {
   day_start_utc: string;
   day_start_kst?: string;
+  period_end_utc?: string;
   date_from?: string;
   date_to?: string;
+  vertical?: string;
   timezone?: string;
   recipient_totals: RollingRecipientRow[];
   lines: unknown[];
@@ -65,21 +76,53 @@ type RollingApiResponse = {
   };
 };
 
-function defaultKstRange(): { from: string; to: string } {
-  return { from: kstDaysAgoYmd(30), to: kstTodayYmd() };
+type RollingDetailItem = {
+  ledger_id: number;
+  created_at: string | null;
+  delta: string;
+  reason: string;
+  bet_id: number;
+  game_type: string;
+  bet_amount: string;
+  external_bet_uid: string;
+  bettor_login: string;
+  recipient_login: string;
+};
+
+type RollingDetailResponse = {
+  recipient_user_id: number;
+  recipient_login_id: string | null;
+  date_from: string;
+  date_to: string;
+  vertical: string;
+  items: RollingDetailItem[];
+};
+
+function isVertical(v: string): v is SettlementVertical {
+  return (VALID_VERTICALS as readonly string[]).includes(v);
 }
 
-export default function SettlementsPage() {
+export default function SettlementVerticalPage() {
+  const params = useParams();
+  const raw = typeof params?.vertical === "string" ? params.vertical : "";
+  if (!isVertical(raw)) {
+    notFound();
+  }
+  return <SettlementVerticalBody vertical={raw} />;
+}
+
+function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) {
+  const title = TITLES[vertical];
   const token = useAuthStore((s) => s.token);
   const me = useAuthStore((s) => s.user);
-  const def = useMemo(() => defaultKstRange(), []);
-  const [dateFrom, setDateFrom] = useState(def.from);
-  const [dateTo, setDateTo] = useState(def.to);
+  const today = useMemo(() => kstTodayYmd(), []);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [parentId, setParentId] = useState<string>(me?.id != null ? String(me.id) : "1");
-  const [vertical, setVertical] = useState<"all" | "casino" | "slot" | "powerball" | "sports">(
-    "all",
+  const [showRolling, setShowRolling] = useState(true);
+  const [detailRecipient, setDetailRecipient] = useState<{ user_id: number; login_id: string } | null>(
+    null,
   );
-  const [showRollingVerify, setShowRollingVerify] = useState(true);
 
   useEffect(() => {
     if (me?.id != null) setParentId(String(me.id));
@@ -105,7 +148,7 @@ export default function SettlementsPage() {
         parent_id: String(pid),
         date_from: dateFrom,
         date_to: dateTo,
-        vertical: vertical === "all" ? "all" : vertical,
+        vertical,
       });
       const r = await fetch(`${base}/admin/settlements/total-revenue-table?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -122,16 +165,15 @@ export default function SettlementsPage() {
     enabled: Boolean(token) && Boolean(dateFrom) && Boolean(dateTo) && parentId.trim().length > 0,
   });
 
-  const rollingToday = kstTodayYmd();
   const rollingQ = useQuery({
-    queryKey: ["admin", "settlements", "rolling-lines", token ?? "", rollingToday, "all"],
+    queryKey: ["admin", "settlements", "rolling-lines", token ?? "", dateFrom, dateTo, vertical],
     queryFn: async () => {
       const base = publicApiBase();
       if (!base || !token) throw new Error("missing env or token");
       const q = new URLSearchParams({
-        date_from: rollingToday,
-        date_to: rollingToday,
-        vertical: "all",
+        date_from: dateFrom,
+        date_to: dateTo,
+        vertical,
       });
       const r = await fetch(`${base}/admin/settlements/rolling-lines?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -140,31 +182,53 @@ export default function SettlementsPage() {
       if (!r.ok) throw new Error(`rolling-lines ${r.status}`);
       return (await r.json()) as RollingApiResponse;
     },
-    enabled: Boolean(token) && showRollingVerify,
+    enabled: Boolean(token) && showRolling,
     refetchInterval: 60_000,
+  });
+
+  const detailQ = useQuery({
+    queryKey: [
+      "admin",
+      "settlements",
+      "rolling-lines",
+      "detail",
+      token ?? "",
+      detailRecipient?.user_id,
+      dateFrom,
+      dateTo,
+      vertical,
+    ],
+    queryFn: async () => {
+      const base = publicApiBase();
+      if (!base || !token || !detailRecipient) throw new Error("missing");
+      const q = new URLSearchParams({
+        recipient_user_id: String(detailRecipient.user_id),
+        date_from: dateFrom,
+        date_to: dateTo,
+        vertical,
+      });
+      const r = await fetch(`${base}/admin/settlements/rolling-lines/detail?${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!r.ok) throw new Error(`rolling detail ${r.status}`);
+      return (await r.json()) as RollingDetailResponse;
+    },
+    enabled: Boolean(token) && detailRecipient != null,
   });
 
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold text-slate-100">전체 수익 · 정산판</h2>
+        <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
         <p className="mt-1 text-sm text-slate-500">
-          첫 행은 선택 상위 기준 <strong className="text-slate-400">본인·전체 하부</strong> 합산, 이어서 직속 하부(
-          추천 1단)별입니다. 입출금·배팅·롤링·루징을 한 화면에서 봅니다. (
-          <strong className="text-slate-400">집계·날짜: 한국 시간 KST</strong>)
+          직속 하부(추천 1단)별 기간 합산입니다. 이 페이지는{" "}
+          <strong className="text-slate-400">{title.replace(" 정산", "")}</strong> 종목만 집계합니다. (
+          <strong className="text-slate-400">날짜: 한국 시간 KST</strong>)
         </p>
         <ul className="mt-2 list-inside list-disc text-xs text-slate-500">
-          <li>
-            <strong className="font-medium text-slate-400">배팅액</strong>은 정산 완료된 건만 집계됩니다. 회차·경기
-            미정산이면 0으로 보일 수 있습니다.
-          </li>
-          <li>
-            기간 입력은 <strong className="font-medium text-slate-400">한국 달력(자정~자정, KST)</strong> 기준입니다.
-          </li>
-          <li>
-            하부 행의 <strong className="font-medium text-slate-400">아이디</strong>를 누르면 그 회원을 상위로 두고
-            직속 하부만 다시 불러옵니다 (하위 탐색).
-          </li>
+          <li>기간 기본값은 <strong className="text-slate-400">오늘(KST)</strong>입니다.</li>
+          <li>하부 행의 아이디를 누르면 그 회원을 상위로 두고 직속 하부만 다시 불러옵니다.</li>
         </ul>
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -187,7 +251,7 @@ export default function SettlementsPage() {
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-slate-500">
-            상위 회원 ID (첫 행=본인+하부 합산, 아래=직속 하부)
+            상위 회원 ID (행 = 이 회원의 직속 하부)
             <input
               type="text"
               inputMode="numeric"
@@ -195,22 +259,6 @@ export default function SettlementsPage() {
               onChange={(e) => setParentId(e.target.value)}
               className="w-36 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-slate-200"
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-slate-500">
-            구간
-            <select
-              value={vertical}
-              onChange={(e) =>
-                setVertical(e.target.value as "all" | "casino" | "slot" | "powerball" | "sports")
-              }
-              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-200"
-            >
-              <option value="all">전체 종목</option>
-              <option value="casino">카지노계열</option>
-              <option value="slot">슬롯</option>
-              <option value="powerball">파워볼</option>
-              <option value="sports">스포츠·토토</option>
-            </select>
           </label>
           <button
             type="button"
@@ -222,10 +270,10 @@ export default function SettlementsPage() {
         </div>
       </div>
 
-      {totalQ.isLoading && <p className="text-sm text-slate-500">전체 수익 표를 불러오는 중…</p>}
+      {totalQ.isLoading && <p className="text-sm text-slate-500">표를 불러오는 중…</p>}
       {totalQ.isError && (
         <p className="text-sm text-red-400">
-          {(totalQ.error as Error)?.message ?? "전체 수익 표를 불러오지 못했습니다."}
+          {(totalQ.error as Error)?.message ?? "표를 불러오지 못했습니다."}
         </p>
       )}
 
@@ -249,11 +297,6 @@ export default function SettlementsPage() {
                 ↑ 상위 한 단계 (#{totalQ.data.parent_referrer_id})
               </button>
             ) : null}
-          </p>
-          <p className="text-[11px] leading-relaxed text-slate-500">
-            <strong className="text-slate-400">롤링합</strong>은 추천·본인·차액 롤링만(배팅정산에서 빼는 것과
-            동일). <strong className="text-slate-400">차액루징(P)</strong>은 같은 롤링P 지갑에 쌓이지만 성격은
-            루징이라 별도 열입니다. <strong className="text-slate-400">배팅정산</strong> = 배팅손익 − 롤링합.
           </p>
           <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
             <table className="w-full min-w-[1080px] text-left text-sm text-slate-300">
@@ -384,42 +427,38 @@ export default function SettlementsPage() {
         <button
           type="button"
           className="flex w-full items-center justify-between text-left"
-          onClick={() => setShowRollingVerify((v) => !v)}
+          onClick={() => setShowRolling((v) => !v)}
         >
           <div>
-            <h3 className="text-base font-semibold text-slate-200">오늘 롤링포인트 수령 합계</h3>
+            <h3 className="text-base font-semibold text-slate-200">롤링포인트 수령 합계 ({title.replace(" 정산", "")})</h3>
             <p className="mt-1 text-xs text-slate-500">
-              회원별로 당일 지급분을 합산합니다. 배팅 1건에 여러 줄이 있어도 여기서는{" "}
-              <strong className="text-slate-400">수령인 한 줄</strong>만 보입니다. (
-              <strong className="text-slate-400">당일 KST 자정</strong> 이후)
+              선택한 기간·종목에서 수령인별로 합산합니다. 행을 클릭하면{" "}
+              <strong className="text-slate-400">건별 원장</strong>을 봅니다.
             </p>
           </div>
-          <span className="text-slate-500">{showRollingVerify ? "접기" : "펼치기"}</span>
+          <span className="text-slate-500">{showRolling ? "접기" : "펼치기"}</span>
         </button>
 
-        {showRollingVerify && (
+        {showRolling && (
           <div className="mt-4 space-y-4">
             {rollingQ.isLoading && <p className="text-sm text-slate-500">불러오는 중…</p>}
             {rollingQ.isError && (
-              <p className="text-sm text-red-400">롤링 검증 표를 불러오지 못했습니다.</p>
+              <p className="text-sm text-red-400">롤링 표를 불러오지 못했습니다.</p>
             )}
             {rollingQ.data && (
               <>
                 <p className="text-sm text-slate-500">
                   집계 기간 (KST):{" "}
                   <span className="font-mono text-premium">
-                    {rollingQ.data.date_from ?? rollingToday} ~ {rollingQ.data.date_to ?? rollingToday}
+                    {rollingQ.data.date_from} ~ {rollingQ.data.date_to}
                   </span>
-                  {rollingQ.data.timezone ? (
-                    <span className="ml-2 text-slate-600">({rollingQ.data.timezone})</span>
-                  ) : null}
                 </p>
                 <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
                   <table className="w-full min-w-[480px] text-left text-sm text-slate-300">
                     <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
                       <tr>
                         <th className="p-3">수령 회원</th>
-                        <th className="p-3 text-right">당일 롤링 합계(P)</th>
+                        <th className="p-3 text-right">롤링 합계(P)</th>
                         <th className="p-3 text-right">원장 건수</th>
                       </tr>
                     </thead>
@@ -427,14 +466,21 @@ export default function SettlementsPage() {
                       {(rollingQ.data.recipient_totals ?? []).length === 0 ? (
                         <tr>
                           <td colSpan={3} className="p-6 text-center text-slate-500">
-                            오늘 지급된 롤링 내역이 없습니다.
+                            해당 기간·종목의 롤링 지급 내역이 없습니다.
                           </td>
                         </tr>
                       ) : (
                         (rollingQ.data.recipient_totals ?? []).map((row) => (
                           <tr
                             key={row.user_id}
-                            className="border-b border-slate-800/70 hover:bg-slate-800/30"
+                            role="button"
+                            tabIndex={0}
+                            className="cursor-pointer border-b border-slate-800/70 hover:bg-slate-800/30"
+                            onClick={() => setDetailRecipient({ user_id: row.user_id, login_id: row.login_id })}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ")
+                                setDetailRecipient({ user_id: row.user_id, login_id: row.login_id });
+                            }}
                           >
                             <td className="p-3 font-mono text-premium">{row.login_id}</td>
                             <td className="p-3 text-right tabular-nums text-emerald-300/90">
@@ -465,6 +511,83 @@ export default function SettlementsPage() {
           </div>
         )}
       </div>
+
+      {detailRecipient && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rolling-detail-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDetailRecipient(null);
+          }}
+        >
+          <div className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <h4 id="rolling-detail-title" className="text-sm font-semibold text-slate-100">
+                롤링 원장 상세 — {detailRecipient.login_id} (#{detailRecipient.user_id})
+              </h4>
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                onClick={() => setDetailRecipient(null)}
+              >
+                닫기
+              </button>
+            </div>
+            <div className="max-h-[calc(85vh-3.5rem)] overflow-auto p-4">
+              {detailQ.isLoading && <p className="text-sm text-slate-500">불러오는 중…</p>}
+              {detailQ.isError && (
+                <p className="text-sm text-red-400">상세를 불러오지 못했습니다.</p>
+              )}
+              {detailQ.data && (
+                <div className="table-scroll rounded-lg border border-slate-800">
+                  <table className="w-full min-w-[720px] text-left text-xs text-slate-300">
+                    <thead className="border-b border-slate-800 text-[10px] uppercase text-slate-500">
+                      <tr>
+                        <th className="p-2">시각 (KST)</th>
+                        <th className="p-2 text-right">지급(P)</th>
+                        <th className="p-2">사유</th>
+                        <th className="p-2">배터</th>
+                        <th className="p-2">종목</th>
+                        <th className="p-2 text-right">배팅액</th>
+                        <th className="p-2 font-mono">배팅 ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailQ.data.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-6 text-center text-slate-500">
+                            건별 내역이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        detailQ.data.items.map((it) => (
+                          <tr key={it.ledger_id} className="border-b border-slate-800/60">
+                            <td className="p-2 whitespace-nowrap text-slate-400">
+                              {formatIsoAsKst(it.created_at)}
+                            </td>
+                            <td className="p-2 text-right tabular-nums text-emerald-300/90">
+                              {formatMoneyInt(it.delta)}
+                            </td>
+                            <td className="p-2">{it.reason}</td>
+                            <td className="p-2 font-mono">{it.bettor_login}</td>
+                            <td className="p-2">{it.game_type}</td>
+                            <td className="p-2 text-right tabular-nums">{formatMoneyInt(it.bet_amount)}</td>
+                            <td className="p-2 font-mono text-[10px] text-slate-500">
+                              #{it.bet_id} · {it.external_bet_uid}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

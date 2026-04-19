@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { MemberWalletAdjustDialog } from "@/components/admin/MemberWalletAdjustDialog";
@@ -22,6 +22,11 @@ export type MemberRow = {
   referrer_id: number | null;
   referrer_login_id?: string | null;
   member_level?: number;
+  /** 이 회원에 대해 총판·스태프 지급·회수 허용(슈퍼는 항상 가능) */
+  member_list_wallet_enabled?: boolean;
+  can_wallet_credit?: boolean;
+  can_wallet_debit?: boolean;
+  /** 하위 호환: 지급 또는 회수 중 하나라도 가능 */
   can_wallet_adjust?: boolean;
   can_edit_profile?: boolean;
 };
@@ -37,6 +42,67 @@ function fmtMoney(v: string) {
   return formatMoneyInt(v);
 }
 
+function MemberWalletRowSwitch({
+  row,
+  token,
+  base,
+  canPatch,
+}: {
+  row: MemberRow;
+  token: string;
+  base: string;
+  canPatch: boolean;
+}) {
+  const qc = useQueryClient();
+  const enabled = row.member_list_wallet_enabled !== false;
+  const mut = useMutation({
+    mutationFn: async (next: boolean) => {
+      const r = await adminFetch(`${base}/admin/users/${row.id}/member-list-wallet`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ member_list_wallet_enabled: next }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json() as Promise<{ member_list_wallet_enabled: boolean }>;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "user-profile"] });
+    },
+  });
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        title={
+          canPatch
+            ? enabled
+              ? "이 회원: 지급·회수 허용 중 — 클릭하여 끄기(총판·스태프에게만 적용)"
+              : "이 회원: 지급·회수 끔 — 클릭하여 켜기"
+            : "슈퍼·총판·스태프만 변경 가능"
+        }
+        disabled={!canPatch || mut.isPending}
+        onClick={() => mut.mutate(!enabled)}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-premium/30 disabled:cursor-not-allowed disabled:opacity-40 ${
+          enabled ? "bg-emerald-600/85" : "bg-slate-700"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+            enabled ? "left-5" : "left-1"
+          }`}
+        />
+      </button>
+      <span className={`text-[9px] font-semibold ${enabled ? "text-emerald-500/90" : "text-slate-600"}`}>
+        {enabled ? "허용" : "차단"}
+      </span>
+      {mut.isError ? <span className="max-w-[72px] text-center text-[8px] text-red-400">실패</span> : null}
+    </div>
+  );
+}
+
 type Props = {
   title: string;
   subtitle?: string;
@@ -48,8 +114,11 @@ type Props = {
 
 export function MembersListClient({ title, subtitle, initialIsActive, variant = "default" }: Props) {
   const token = useAuthStore((s) => s.token);
+  const authRole = useAuthStore((s) => s.user?.role ?? "");
   const base = publicApiBase();
   const qc = useQueryClient();
+  const canPatchMemberWalletFlag =
+    authRole === "super_admin" || authRole === "owner" || authRole === "staff";
   const [q, setQ] = useState("");
   const [role, setRole] = useState("");
   const initialActiveStr: "" | "true" | "false" =
@@ -104,9 +173,13 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
           </h1>
           {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
           <p className="mt-1 text-[11px] text-slate-600">
-            <strong className="text-slate-500">{uplineLabel}</strong> 열은 직속 상위 계정(<code className="text-slate-600">referrer_id</code>)입니다.
-            표시 이름은 <Link href="/settings/site-policy" className="text-premium hover:underline">사이트 운영 정책</Link>에서{" "}
-            <code className="text-slate-600">admin_ui.member_upline_label</code> 로 변경할 수 있습니다.
+            <strong className="text-slate-500">{uplineLabel}</strong> 열은 직속 상위(<code className="text-slate-600">referrer_id</code>)입니다.{" "}
+            <strong className="text-slate-500">지급·회수 대상</strong> 열에서 <strong className="text-slate-400">회원마다</strong> 켜고 끕니다(총판·스태프에게만
+            적용, 슈퍼는 항상 가능). 사이트 전체 한도는{" "}
+            <Link href="/settings/site-policy" className="text-premium hover:underline">
+              사이트 운영 정책
+            </Link>
+            과 함께 적용됩니다.
           </p>
         </div>
         {variant === "blocked" ? (
@@ -176,7 +249,7 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
 
       {!query.isLoading && items.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/40">
-          <table className="min-w-[920px] w-full text-left text-xs text-slate-300">
+          <table className="min-w-[1040px] w-full text-left text-xs text-slate-300">
             <thead className="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2">ID</th>
@@ -190,6 +263,11 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
                 <th className="px-3 py-2 text-right">게임머니</th>
                 <th className="px-3 py-2 text-right">롤링</th>
                 <th className="px-3 py-2">상태</th>
+                <th className="px-2 py-2 text-center" title="회원별로 총판·스태프에게 지급·회수 허용(슈퍼 제외)">
+                  지급·회수
+                  <br />
+                  <span className="font-normal normal-case text-slate-600">대상</span>
+                </th>
                 <th className="px-3 py-2 text-center">지급</th>
                 <th className="px-3 py-2 text-center">회수</th>
                 <th className="px-3 py-2">상세</th>
@@ -222,8 +300,13 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
                       </span>
                     )}
                   </td>
+                  <td className="px-1 py-2 text-center align-middle">
+                    {token && base ? (
+                      <MemberWalletRowSwitch row={u} token={token} base={base} canPatch={canPatchMemberWalletFlag} />
+                    ) : null}
+                  </td>
                   <td className="px-2 py-2 text-center">
-                    {u.can_wallet_adjust !== false ? (
+                    {(u.can_wallet_credit ?? u.can_wallet_adjust) !== false ? (
                       <button
                         type="button"
                         onClick={() => setWallet({ userId: u.id, loginId: u.login_id, mode: "credit" })}
@@ -233,13 +316,13 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
                         지급
                       </button>
                     ) : (
-                      <span className="text-[10px] text-slate-600" title="사이트 정책으로 비활성">
+                      <span className="text-[10px] text-slate-600" title="권한 없음 또는 이 회원 대상 꺼짐">
                         —
                       </span>
                     )}
                   </td>
                   <td className="px-2 py-2 text-center">
-                    {u.can_wallet_adjust !== false ? (
+                    {(u.can_wallet_debit ?? u.can_wallet_adjust) !== false ? (
                       <button
                         type="button"
                         onClick={() => setWallet({ userId: u.id, loginId: u.login_id, mode: "debit" })}
@@ -249,7 +332,7 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
                         회수
                       </button>
                     ) : (
-                      <span className="text-[10px] text-slate-600" title="사이트 정책으로 비활성">
+                      <span className="text-[10px] text-slate-600" title="권한 없음 또는 이 회원 대상 꺼짐">
                         —
                       </span>
                     )}

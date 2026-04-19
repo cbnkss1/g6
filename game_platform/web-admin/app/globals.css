@@ -211,3 +211,44 @@ body {
 .member-detail-shell .member-profile-card .text-slate-600 {
   color: rgb(148 163 184) !important;
 }
+
+/* ─── Quantum UI (쪽지·팝업·고객센터 등 — 과한 블랙 완화, 밀도·대비 정리) ─ */
+.quantum-shell {
+  --q-fg: #e8eef7;
+  --q-muted: #94a3b8;
+  --q-line: rgba(148, 163, 184, 0.22);
+  --q-surface: rgba(30, 41, 59, 0.55);
+  color: var(--q-fg);
+}
+
+.quantum-shell .quantum-hero {
+  border-radius: 1.25rem;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.12), rgba(30, 41, 59, 0.5));
+  box-shadow: 0 8px 40px rgba(8, 47, 73, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.quantum-card {
+  border-radius: 1rem;
+  border: 1px solid var(--q-line);
+  background: var(--q-surface);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.quantum-input {
+  @apply w-full rounded-xl border px-3 py-2.5 text-sm transition;
+  border-color: rgba(100, 116, 139, 0.45);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f1f5f9;
+}
+.quantum-input:focus {
+  @apply outline-none ring-2;
+  border-color: rgba(56, 189, 248, 0.45);
+  --tw-ring-color: rgba(56, 189, 248, 0.2);
+}
+
+.quantum-label {
+  @apply block text-xs font-medium;
+  color: var(--q-muted);
+}

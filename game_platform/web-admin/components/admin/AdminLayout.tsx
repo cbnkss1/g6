@@ -10,11 +10,11 @@ type Props = { children: React.ReactNode };
  */
 export function AdminLayout({ children }: Props) {
   return (
-    <div className="flex min-h-screen flex-col bg-slate-950 lg:flex-row">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950 lg:flex-row">
       <DesktopSidebar />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col pb-20 lg:pb-0">
         <AdminHeader />
-        <main className="flex-1 px-4 py-4 sm:px-6">{children}</main>
+        <main className="flex-1 px-3 py-4 sm:px-5 lg:px-8">{children}</main>
       </div>
       <MobileBottomNav />
     </div>

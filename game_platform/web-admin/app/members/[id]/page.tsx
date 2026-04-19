@@ -12,6 +12,8 @@ import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type ProfilePermissions = {
+  can_wallet_credit?: boolean;
+  can_wallet_debit?: boolean;
   can_wallet_adjust: boolean;
   can_edit_profile: boolean;
 };
@@ -26,6 +28,10 @@ type Profile = {
   rolling_point_balance: string;
   is_active: boolean;
   is_store_enabled: boolean;
+  /** 총판·스태프에게 이 회원 지급·회수 허용(슈퍼는 항상 가능) */
+  member_list_wallet_enabled?: boolean;
+  /** 대상 계정이 하부 관리자 제한 모드인지(슈퍼가 설정) */
+  admin_partner_limited_ui?: boolean;
   referrer_id: number | null;
   referrer_login_id: string | null;
   member_level: number;
@@ -77,6 +83,9 @@ export default function MemberDetailPage() {
   const router = useRouter();
   const id = Number(params.id);
   const token = useAuthStore((s) => s.token);
+  const authRole = useAuthStore((s) => s.user?.role ?? "");
+  const viewerPartnerLimited = useAuthStore((s) => s.user?.admin_partner_limited_ui === true);
+  const setUser = useAuthStore((s) => s.setUser);
   const base = publicApiBase();
   const qc = useQueryClient();
   const [wallet, setWallet] = useState<null | { mode: "credit" | "debit" }>(null);
@@ -100,7 +109,8 @@ export default function MemberDetailPage() {
 
   const u = q.data;
   const perms = u?.permissions;
-  const canWallet = perms?.can_wallet_adjust !== false;
+  const canWalletCredit = (perms?.can_wallet_credit ?? perms?.can_wallet_adjust) !== false;
+  const canWalletDebit = (perms?.can_wallet_debit ?? perms?.can_wallet_adjust) !== false;
   const canEdit = Boolean(perms?.can_edit_profile);
 
   useEffect(() => {
@@ -128,6 +138,47 @@ export default function MemberDetailPage() {
     },
     onError: (e: Error) => {
       setSaveMsg(e.message);
+    },
+  });
+
+  const canPatchWalletFlag =
+    authRole === "super_admin" || authRole === "owner" || authRole === "staff";
+
+  const partnerUiMut = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (!base || !token) throw new Error("no token");
+      const r = await adminFetch(`${base}/admin/users/${id}/partner-limited-ui`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ admin_partner_limited_ui: next }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return (await r.json()) as { id: number; admin_partner_limited_ui: boolean };
+    },
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ["admin", "user-profile"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "users"] });
+      if (data.id === useAuthStore.getState().user?.id) {
+        const u = useAuthStore.getState().user;
+        if (u) setUser({ ...u, admin_partner_limited_ui: data.admin_partner_limited_ui });
+      }
+    },
+  });
+
+  const walletFlagMut = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (!base || !token) throw new Error("no token");
+      const r = await adminFetch(`${base}/admin/users/${id}/member-list-wallet`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ member_list_wallet_enabled: next }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return (await r.json()) as Profile;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "user-profile"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "users"] });
     },
   });
 
@@ -181,12 +232,81 @@ export default function MemberDetailPage() {
               <Link href="/settings/site-policy" className="text-premium hover:underline">
                 사이트 운영 정책
               </Link>
-              의 <code className="text-slate-600">admin_ui</code> 로 바꿀 수 있습니다. 지급·회수·상세 수정 허용도
-              같은 화면의 <code className="text-slate-600">member_wallet_enabled</code>,{" "}
-              <code className="text-slate-600">member_profile_edit_enabled</code> 로 제한할 수 있습니다.{" "}
-              <strong className="text-slate-500">슈퍼관리자</strong>는 항상 허용됩니다.
+              의 <code className="text-slate-600">admin_ui</code> 로 바꿀 수 있습니다. 게임머니{" "}
+              <strong className="text-slate-400">지급·회수</strong>는 회원 목록·이 화면 버튼으로 처리하고,{" "}
+              <strong className="text-slate-400">프로필·연락처·활성 등 상세 수정</strong>은{" "}
+              <strong className="text-slate-300">슈퍼관리자</strong>만 저장할 수 있습니다. 회원 목록과 동일하게{" "}
+              <strong className="text-slate-400">아래 스위치</strong>로 총판·스태프에게 이 회원 지급·회수를 줄지 말지 정할 수 있습니다.
             </p>
           </div>
+
+          {canPatchWalletFlag ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-slate-200">이 회원 — 지급·회수 대상 (총판·스태프)</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  끄면 총판·스태프는 이 회원에게 지급·회수 불가. 슈퍼관리자는 항상 가능.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold ${u.member_list_wallet_enabled !== false ? "text-emerald-400" : "text-slate-500"}`}>
+                  {u.member_list_wallet_enabled !== false ? "ON" : "OFF"}
+                </span>
+                <button
+                  type="button"
+                  disabled={walletFlagMut.isPending}
+                  onClick={() => walletFlagMut.mutate(!(u.member_list_wallet_enabled !== false))}
+                  className={`relative h-8 w-14 rounded-full transition-colors disabled:opacity-50 ${
+                    u.member_list_wallet_enabled !== false ? "bg-emerald-600/85" : "bg-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                      u.member_list_wallet_enabled !== false ? "left-7" : "left-1"
+                    }`}
+                  />
+                </button>
+              </div>
+              {walletFlagMut.isError ? (
+                <p className="w-full text-xs text-red-400">{(walletFlagMut.error as Error).message}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {authRole === "super_admin" && (u.role === "owner" || u.role === "staff") ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/25 bg-amber-950/20 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-slate-200">하부 관리자 제한 모드 (대시보드·내역·회원 범위)</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  켜면 이 계정은 비밀번호 변경·하부 데이터만 보며 요율은 조회만, 게임 관리 메뉴는 숨깁니다.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-xs font-bold ${u.admin_partner_limited_ui === true ? "text-amber-400" : "text-slate-500"}`}
+                >
+                  {u.admin_partner_limited_ui === true ? "ON" : "OFF"}
+                </span>
+                <button
+                  type="button"
+                  disabled={partnerUiMut.isPending}
+                  onClick={() => partnerUiMut.mutate(!(u.admin_partner_limited_ui === true))}
+                  className={`relative h-8 w-14 rounded-full transition-colors disabled:opacity-50 ${
+                    u.admin_partner_limited_ui === true ? "bg-amber-600/85" : "bg-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                      u.admin_partner_limited_ui === true ? "left-7" : "left-1"
+                    }`}
+                  />
+                </button>
+              </div>
+              {partnerUiMut.isError ? (
+                <p className="w-full text-xs text-red-400">{(partnerUiMut.error as Error).message}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="member-profile-card grid gap-4 p-5 sm:grid-cols-2">
             <div>
@@ -310,7 +430,11 @@ export default function MemberDetailPage() {
             </div>
           </div>
 
-          <MemberRollingRatesPanel userId={id} variant="memberDetail" />
+          <MemberRollingRatesPanel
+            userId={id}
+            variant="memberDetail"
+            readOnly={viewerPartnerLimited || authRole === "player"}
+          />
 
           {canEdit ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -330,33 +454,35 @@ export default function MemberDetailPage() {
             </div>
           ) : (
             <p className="text-xs text-slate-500">
-              이 계정으로는 상세 수정이 비활성이거나(사이트 정책), 플레이어가 아닌 회원은 총판·스태프가 수정할 수 없습니다.
+              표시명·연락처·계좌·활성 등 <strong className="text-slate-400">상세 저장</strong>은 슈퍼관리자만 할 수 있습니다. 아래
+              롤링 요율·지급·회수는 권한이 있으면 그대로 이용하세요.
             </p>
           )}
 
           <div className="flex flex-wrap gap-3">
-            {canWallet ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setWallet({ mode: "credit" })}
-                  className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
-                  style={{ background: "linear-gradient(135deg, #22c55e, #15803d)" }}
-                >
-                  지급
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWallet({ mode: "debit" })}
-                  className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
-                  style={{ background: "linear-gradient(135deg, #f87171, #b91c1c)" }}
-                >
-                  회수
-                </button>
-              </>
-            ) : (
-              <p className="text-xs text-slate-500">이 사이트에서는 어드민 지급·회수가 비활성화되어 있습니다.</p>
-            )}
+            {canWalletCredit ? (
+              <button
+                type="button"
+                onClick={() => setWallet({ mode: "credit" })}
+                className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
+                style={{ background: "linear-gradient(135deg, #22c55e, #15803d)" }}
+              >
+                지급
+              </button>
+            ) : null}
+            {canWalletDebit ? (
+              <button
+                type="button"
+                onClick={() => setWallet({ mode: "debit" })}
+                className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white"
+                style={{ background: "linear-gradient(135deg, #f87171, #b91c1c)" }}
+              >
+                회수
+              </button>
+            ) : null}
+            {!canWalletCredit && !canWalletDebit ? (
+              <p className="text-xs text-slate-500">지급·회수 권한이 없습니다. (사이트 정책 또는 본인 계정 설정)</p>
+            ) : null}
             <Link
               href={`/members/${u.id}/bet-limits`}
               className="rounded-xl border border-slate-700 px-5 py-2.5 text-sm text-slate-200 hover:border-premium/40"

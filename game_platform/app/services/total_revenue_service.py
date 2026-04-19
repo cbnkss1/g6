@@ -1,5 +1,5 @@
 """
-전체 수익 현황: 직속 하부(추천 1단)별 기간 집계 — 카지노/슬롯 구분 없이 합산.
+전체 수익 현황: 선택 상위 기준 **본인+전체 하부** 합산 행 + 직속 하부(추천 1단)별 행.
 """
 from __future__ import annotations
 
@@ -233,6 +233,80 @@ ROLL_REASONS_ROLLING_ONLY = (
     RollingPointLedgerReason.DIFFERENTIAL_ROLLING.value,
 )
 ROLL_SELF_ONLY = (RollingPointLedgerReason.SELF_ROLLING.value,)
+# 롤링포인트 원장이지만 성격은 루징(차액) — 순수 롤링 합과 섞지 않음
+ROLL_REASONS_DIFF_LOSING_ONLY = (RollingPointLedgerReason.DIFFERENTIAL_LOSING.value,)
+
+
+def _build_revenue_row(
+    db: Session,
+    *,
+    partner_user: User,
+    ids_sub: Tuple[int, ...],
+    t0: datetime,
+    t1: datetime,
+    gt: Optional[Tuple[str, ...]],
+    has_children: bool,
+    row_scope: str,
+) -> Dict[str, Any]:
+    """한 명(partner_user)을 루트로 한 ids_sub 집계 행. row_scope: full_subtree | direct_child."""
+    d = _sum_cash_total(db, ids_sub, t0, t1, "DEPOSIT")
+    w = _sum_cash_total(db, ids_sub, t0, t1, "WITHDRAW")
+    net = (d - w).quantize(Q)
+    st, wi = _sum_bets_total(db, ids_sub, t0, t1, gt)
+    bpl = (st - wi).quantize(Q)
+    r_mem = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_FROM_MEMBERS, gt)
+    r_self = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_SELF_ONLY, gt)
+    r_only = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_ROLLING_ONLY, gt)
+    r_lose_pt = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_DIFF_LOSING_ONLY, gt)
+    bet_settle = (bpl - r_only).quantize(Q)
+    eff_l = _effective_losing_percent_partner_period(db, partner_user.id, ids_sub, t0, t1, gt)
+    ls = (bet_settle * eff_l / Decimal("100")).quantize(Q)
+    u = partner_user
+    return {
+        "user_id": u.id,
+        "login_id": u.login_id,
+        "display_name": (u.display_name or "").strip() or u.login_id,
+        "deposit_sum": str(d),
+        "withdraw_sum": str(w),
+        "cash_net": str(net),
+        "game_money_balance": str(Decimal(str(u.game_money_balance or 0)).quantize(Q)),
+        "rolling_point_balance": str(Decimal(str(u.rolling_point_balance or 0)).quantize(Q)),
+        "bet_amount": str(st),
+        "win_amount": str(wi),
+        "bet_profit_loss": str(bpl),
+        "rolling_total": str(r_only),
+        "rolling_from_members": str(r_mem),
+        "rolling_self": str(r_self),
+        "rolling_points": str(r_only),
+        "losing_point_ledger": str(r_lose_pt),
+        "losing": str(ls),
+        "losing_rate_percent": str(eff_l),
+        "bet_settlement": str(bet_settle),
+        "has_children": has_children,
+        "row_scope": row_scope,
+    }
+
+
+def _row_to_totals_decimals(row: Dict[str, Any]) -> Dict[str, Decimal]:
+    keys = (
+        "deposit_sum",
+        "withdraw_sum",
+        "cash_net",
+        "bet_amount",
+        "win_amount",
+        "bet_profit_loss",
+        "rolling_total",
+        "rolling_from_members",
+        "rolling_self",
+        "rolling_points",
+        "losing_point_ledger",
+        "losing",
+        "bet_settlement",
+    )
+    out: Dict[str, Decimal] = {}
+    for k in keys:
+        out[k] = Decimal(str(row.get(k, "0"))).quantize(Q)
+    return out
 
 
 def get_total_revenue_table(
@@ -247,13 +321,13 @@ def get_total_revenue_table(
     vertical: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    `parent_id` 직속 하부만 행으로 반환 (클릭 시 parent_id만 바꿔 재호출).
-    - 입출금·배팅·롤링·유저별 롤링: 해당 행 회원을 루트로 한 **전체 하부 서브트리** 합산.
-    - 루징: 통 바구니 — **배팅정산 × 해당 행 파트너 본인의 유효 루징% / 100** (기간·종목 스테이크 가중).
-    - 보유머니·보유롤링: 행 회원 **본인** 스냅샷.
-    - 배팅정산 = 배팅손익 − 롤링(롤링 포인트 열, 트리 합산).
-    - ``vertical``: ``casino`` | ``slot`` | ``powerball`` | ``sports`` 이면 해당 구간만 (미지정 시 전 종목).
-    - 기간 ``date_from`` ~ ``date_to`` 는 **KST 달력 날짜** (자정~자정, Asia/Seoul).
+    - **첫 번째 행**: ``parent_id`` 기준 **본인 + 전체 하부**(하향 서브트리) 합산. 직추천이 없어도 본인 배팅·롤링이 여기 포함됨.
+    - **이후 행들**: ``parent_id``의 **직속 하부** 각각에 대해, 해당 회원을 루트로 한 하부 서브트리만 집계(하위 탐색용).
+    - 입출금·배팅·롤링: 서브트리 user_id 합산.
+    - 루징: 배팅정산 × 해당 행 파트너 유효 루징% / 100.
+    - 보유머니·보유롤링: 행의 파트너 **본인** 스냅샷.
+    - ``totals``: 첫 번째(전체) 행과 동일 — 하단 합계는 "선택 상위·기간 전체".
+    - ``vertical``·기간은 KST 달력.
     """
     _assert_parent_visible(db, admin=admin, parent_id=parent_id, super_admin=super_admin)
     t0, t1 = kst_calendar_window_utc(date_from, date_to)
@@ -281,79 +355,44 @@ def get_total_revenue_table(
 
     parent = db.get(User, parent_id)
     rows_out: List[Dict[str, Any]] = []
-    z = Decimal("0").quantize(Q)
 
-    totals = {
-        "deposit_sum": z,
-        "withdraw_sum": z,
-        "cash_net": z,
-        "bet_amount": z,
-        "win_amount": z,
-        "bet_profit_loss": z,
-        "rolling_total": z,
-        "rolling_from_members": z,
-        "rolling_self": z,
-        "rolling_points": z,
-        "losing": z,
-        "bet_settlement": z,
-    }
+    if parent is None:
+        from fastapi import HTTPException, status
 
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="parent not found")
+
+    # 1) 선택 상위 기준: 본인 + 전체 하부 (직추천 0명이어도 본인 실적 표시)
+    full_ids = tuple(downward_subtree_user_ids(db, parent_id))
+    full_row = _build_revenue_row(
+        db,
+        partner_user=parent,
+        ids_sub=full_ids,
+        t0=t0,
+        t1=t1,
+        gt=gt,
+        has_children=len(children) > 0,
+        row_scope="full_subtree",
+    )
+    rows_out.append(full_row)
+
+    totals_dec = _row_to_totals_decimals(full_row)
+    totals = {k: str(v.quantize(Q)) for k, v in totals_dec.items()}
+
+    # 2) 직속 하부별 (하위 상위로 전환해 탐색)
     for u in children:
         subtree = downward_subtree_user_ids(db, u.id)
         ids_sub = tuple(subtree)
-
-        d = _sum_cash_total(db, ids_sub, t0, t1, "DEPOSIT")
-        w = _sum_cash_total(db, ids_sub, t0, t1, "WITHDRAW")
-        net = (d - w).quantize(Q)
-        st, wi = _sum_bets_total(db, ids_sub, t0, t1, gt)
-        bpl = (st - wi).quantize(Q)
-        r_all = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_ALL, gt)
-        r_mem = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_FROM_MEMBERS, gt)
-        r_self = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_SELF_ONLY, gt)
-        r_only = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_ROLLING_ONLY, gt)
-        # 배팅정산 = 배팅손익 − 롤링(포인트, 트리 합산)
-        bet_settle = (bpl - r_only).quantize(Q)
-        eff_l = _effective_losing_percent_partner_period(db, u.id, ids_sub, t0, t1, gt)
-        ls = (bet_settle * eff_l / Decimal("100")).quantize(Q)
-
-        row = {
-            "user_id": u.id,
-            "login_id": u.login_id,
-            "display_name": (u.display_name or "").strip() or u.login_id,
-            "deposit_sum": str(d),
-            "withdraw_sum": str(w),
-            "cash_net": str(net),
-            "game_money_balance": str(Decimal(str(u.game_money_balance or 0)).quantize(Q)),
-            "rolling_point_balance": str(Decimal(str(u.rolling_point_balance or 0)).quantize(Q)),
-            "bet_amount": str(st),
-            "win_amount": str(wi),
-            "bet_profit_loss": str(bpl),
-            "rolling_total": str(r_all),
-            "rolling_from_members": str(r_mem),
-            "rolling_self": str(r_self),
-            "rolling_points": str(r_only),
-            "losing": str(ls),
-            "losing_rate_percent": str(eff_l),
-            "bet_settlement": str(bet_settle),
-            "has_children": (child_counts.get(u.id, 0) > 0),
-        }
+        row = _build_revenue_row(
+            db,
+            partner_user=u,
+            ids_sub=ids_sub,
+            t0=t0,
+            t1=t1,
+            gt=gt,
+            has_children=(child_counts.get(u.id, 0) > 0),
+            row_scope="direct_child",
+        )
         rows_out.append(row)
-
-        totals["deposit_sum"] += d
-        totals["withdraw_sum"] += w
-        totals["cash_net"] += net
-        totals["bet_amount"] += st
-        totals["win_amount"] += wi
-        totals["bet_profit_loss"] += bpl
-        totals["rolling_total"] += r_all
-        totals["rolling_from_members"] += r_mem
-        totals["rolling_self"] += r_self
-        totals["rolling_points"] += r_only
-        totals["losing"] += ls
-        totals["bet_settlement"] += bet_settle
-
-    for k in totals:
-        totals[k] = str(totals[k].quantize(Q))
 
     p = parent
     parent_info = {

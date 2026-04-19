@@ -12,6 +12,32 @@ export default function SettingsPage() {
   const base = publicApiBase();
   const headers = { Authorization: `Bearer ${token}` };
   const qc = useQueryClient();
+  const partnerLimited =
+    user?.admin_partner_limited_ui === true || user?.role === "player";
+
+  const [curPwd, setCurPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [newPwd2, setNewPwd2] = useState("");
+  const [pwdMsg, setPwdMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  const pwdMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${base}/admin/me/password`, {
+        method: "PATCH",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: curPwd, new_password: newPwd }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json() as Promise<{ ok: boolean }>;
+    },
+    onSuccess: () => {
+      setPwdMsg({ type: "ok", text: "비밀번호가 변경되었습니다." });
+      setCurPwd("");
+      setNewPwd("");
+      setNewPwd2("");
+    },
+    onError: (e: Error) => setPwdMsg({ type: "err", text: e.message }),
+  });
 
   // OTP 상태
   const [otpStep, setOtpStep] = useState<"idle" | "setup" | "verify" | "disable">("idle");
@@ -80,6 +106,107 @@ export default function SettingsPage() {
     },
     onError: (e: Error) => setMsg({ type: "err", text: e.message }),
   });
+
+  if (partnerLimited) {
+    return (
+      <div className="mx-auto max-w-lg space-y-5 animate-fade-up">
+        <div>
+          <p className="text-premium-label">내 정보</p>
+          <h1
+            className="mt-1 text-2xl font-semibold text-slate-100"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
+          >
+            로그인 비밀번호 변경
+          </h1>
+          <p className="mt-2 text-xs text-slate-500">
+            하부 관리자 계정은 여기서 비밀번호만 바꿀 수 있습니다.
+          </p>
+        </div>
+
+        <div className="glass-card flex items-center gap-4 p-5">
+          <div
+            className="flex h-14 w-14 items-center justify-center rounded-2xl text-2xl"
+            style={{
+              background: "linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.05))",
+              border: "1px solid rgba(212,175,55,0.2)",
+            }}
+          >
+            👤
+          </div>
+          <div>
+            <p className="text-premium-label">현재 계정</p>
+            <p className="mt-0.5 text-xl font-bold text-slate-100">{user?.login_id}</p>
+            <span className="mt-1 inline-block rounded-full border border-premium/25 bg-premium/12 px-2 py-0.5 text-[10px] font-semibold text-premium">
+              {user?.role?.toUpperCase()}
+            </span>
+          </div>
+        </div>
+
+        <div className="glass-card space-y-4 p-5">
+          {pwdMsg ? (
+            <div
+              className={`rounded-xl border px-4 py-3 text-sm ${
+                pwdMsg.type === "ok"
+                  ? "border-emerald-500/20 bg-emerald-950/20 text-emerald-300"
+                  : "border-red-500/20 bg-red-950/20 text-red-400"
+              }`}
+            >
+              {pwdMsg.type === "ok" ? "✓ " : "✕ "}
+              {pwdMsg.text}
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">현재 비밀번호</p>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={curPwd}
+              onChange={(e) => setCurPwd(e.target.value)}
+              className="admin-touch-input w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-slate-100"
+            />
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">새 비밀번호 (4자 이상)</p>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={newPwd}
+              onChange={(e) => setNewPwd(e.target.value)}
+              className="admin-touch-input w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-slate-100"
+            />
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">새 비밀번호 확인</p>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={newPwd2}
+              onChange={(e) => setNewPwd2(e.target.value)}
+              className="admin-touch-input w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-slate-100"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={
+              pwdMut.isPending || curPwd.length < 1 || newPwd.length < 4 || newPwd !== newPwd2
+            }
+            onClick={() => {
+              setPwdMsg(null);
+              if (newPwd !== newPwd2) {
+                setPwdMsg({ type: "err", text: "새 비밀번호 확인이 일치하지 않습니다." });
+                return;
+              }
+              pwdMut.mutate();
+            }}
+            className="admin-touch-btn w-full rounded-xl font-semibold text-slate-950 transition-all hover:opacity-90 disabled:opacity-40"
+            style={{ background: "linear-gradient(135deg, #d4af37, #f0e2a8, #8a7530)" }}
+          >
+            {pwdMut.isPending ? "처리 중…" : "비밀번호 변경"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg space-y-5 animate-fade-up">

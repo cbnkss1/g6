@@ -75,6 +75,7 @@ export default function LoginPage() {
         ...u,
         is_store_enabled: Boolean(u.is_store_enabled),
         is_partner: Boolean(u.is_partner),
+        admin_partner_limited_ui: Boolean(u.admin_partner_limited_ui),
       }, ok.site);
       const nextRaw = new URLSearchParams(window.location.search).get("next");
       const dest =

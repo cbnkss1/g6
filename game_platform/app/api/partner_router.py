@@ -48,6 +48,8 @@ class PartnerCreateBody(BaseModel):
     slot_settle: float = 0.0
     # 상위 user id: 기본은 로그인 유저. 특정 하부 밑에 만들 때는 그 노드의 id (= 그 계정이 추천인)
     referrer_id_override: Optional[int] = None
+    # 트리에 표시할 직책(임의 문자열, 권한과 무관)
+    team_role_label: Optional[str] = Field(None, max_length=64)
 
     @field_validator("role")
     @classmethod
@@ -72,6 +74,12 @@ class MoneyTransferBody(BaseModel):
 
 class PasswordChangeBody(BaseModel):
     new_password: str = Field(..., min_length=4)
+
+
+class PartnerTeamRolePatchBody(BaseModel):
+    """트리·목록 표시용 직책(마스터, 본사, 서울 스태프 등). 비우면 삭제."""
+
+    team_role_label: Optional[str] = Field(None, max_length=64)
 
 
 # ─── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -110,6 +118,15 @@ def _set_rates(db: Session, user_id: int, casino_rolling: float, slot_rolling: f
             ))
 
 
+def _clip_team_role_label(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    return s[:64]
+
+
 def _partner_dict(db: Session, u: User, viewer_id: int) -> Dict[str, Any]:
     """하부 행 직렬화 (referrer_id = 추천인 user id)."""
     rates = _get_rates(db, u.id)
@@ -120,6 +137,7 @@ def _partner_dict(db: Session, u: User, viewer_id: int) -> Dict[str, Any]:
         "id": u.id,
         "login_id": u.login_id,
         "display_name": u.display_name,
+        "team_role_label": u.team_role_label,
         "is_active": u.is_active,
         "is_partner": user_is_partner(db, u.id),
         "game_money_balance": str(u.game_money_balance),
@@ -203,6 +221,7 @@ def create_partner(
         is_active=True,
         game_money_balance=Decimal("0"),
         rolling_point_balance=Decimal("0"),
+        team_role_label=_clip_team_role_label(body.team_role_label),
     )
     db.add(new_user)
     db.flush()  # ID 확보
@@ -331,6 +350,28 @@ def collect_partner(
     )
     db.commit()
     return {"ok": True, "collected": str(amount), "your_balance": str(user.game_money_balance)}
+
+
+@router.patch("/partners/{partner_id}/team-role", summary="트리 표시용 직책(임의 라벨) 설정")
+def patch_partner_team_role(
+    partner_id: int,
+    body: PartnerTeamRolePatchBody,
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    target = _assert_is_my_downline(db, user, partner_id)
+    target.team_role_label = _clip_team_role_label(body.team_role_label)
+    AuditService.log(
+        db,
+        actor=user,
+        action="PARTNER_TEAM_ROLE",
+        target_type="USER",
+        target_id=str(target.id),
+        note=f"team_role_label={target.team_role_label!r}",
+    )
+    db.commit()
+    db.refresh(target)
+    return _partner_dict(db, target, user.id)
 
 
 @router.patch("/partners/{partner_id}/toggle", summary="회원 활성/비활성 토글")

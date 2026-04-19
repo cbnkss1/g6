@@ -57,18 +57,27 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     icon: "¥",
     items: [
       { href: "/settlements", label: "전체 수익 · 정산판", icon: "¥" },
-      { href: "/settlements/casino-day", label: "카지노 당일금액 전환", icon: "🃏" },
-      { href: "/settlements/slot-period", label: "슬롯 정산금 신청", icon: "🎰" },
-      { href: "/settlements/casino-sum", label: "카지노 당일금액 합산", icon: "◑" },
-      { href: "/settlements/slot-sum", label: "슬롯 정산금 합산", icon: "◐" },
+      { href: "/settlements/casino", label: "카지노 정산", icon: "🃏" },
+      { href: "/settlements/slot", label: "슬롯 정산", icon: "🎰" },
+      { href: "/settlements/powerball", label: "파워볼(미니게임) 정산", icon: "⚡" },
+      { href: "/settlements/sports", label: "스포츠 정산", icon: "⚽" },
     ],
   },
   {
     group: "입출금",
     icon: "$",
     items: [
-      { href: "/cash", label: "입출금 콘솔", icon: "◈" },
+      { href: "/cash/request", label: "입출금 신청", icon: "◈" },
       { href: "/cash/transfer", label: "머니 · 포인트 전환", icon: "⇄" },
+      {
+        href: "/history/charge",
+        label: "최근충전내역",
+        icon: "↓",
+        sectionTitle: "승인·처리 내역",
+        nested: true,
+      },
+      { href: "/history/exchange", label: "최근환전내역", icon: "↑", nested: true },
+      { href: "/support/super-inquiry", label: "슈퍼관리자 문의", icon: "✉" },
     ],
   },
   {
@@ -89,12 +98,10 @@ const NAV_GROUPS_BASE: NavGroup[] = [
         href: "/history/money",
         label: "머니 이동내역",
         icon: "⊡",
-        sectionTitle: "머니 · 포인트 · 충환전",
+        sectionTitle: "머니 · 포인트",
         nested: true,
       },
       { href: "/history/point", label: "포인트 이동내역", icon: "◎", nested: true },
-      { href: "/history/charge", label: "최근충전내역", icon: "↓", nested: true },
-      { href: "/history/exchange", label: "최근환전내역", icon: "↑", nested: true },
       {
         href: "/betting/casino",
         label: "카지노",
@@ -108,13 +115,18 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     ],
   },
   {
-    group: "시스템",
-    icon: "⊞",
+    group: "운영 · 연락",
+    icon: "✦",
     items: [
-      { href: "/system", label: "시스템", icon: "◈" },
-      { href: "/support", label: "고객센터", icon: "✉" },
-      { href: "/messages", label: "쪽지", icon: "💬" },
+      { href: "/messages", label: "쪽지 발송", icon: "💬" },
+      { href: "/popups", label: "플레이어 팝업", icon: "⊞" },
+      { href: "/support", label: "고객센터 (1:1)", icon: "✉" },
     ],
+  },
+  {
+    group: "시스템",
+    icon: "◇",
+    items: [{ href: "/system", label: "시스템", icon: "◈" }],
   },
   {
     group: "설정",
@@ -142,12 +154,55 @@ function filterNavForToto(groups: NavGroup[], totoOn: boolean): NavGroup[] {
   });
 }
 
+/** 슈퍼가 켠 하부 관리자(파트너) — 게임/시스템·일부 운영 메뉴 숨김, 설정은 비밀번호만 */
+function filterNavForPartnerLimited(groups: NavGroup[], limited: boolean): NavGroup[] {
+  if (!limited) return groups;
+  const dropGroups = new Set(["게임 관리", "시스템"]);
+  const dropHrefs = new Set([
+    "/agents/create",
+    "/rolling",
+    "/audit",
+    "/messages",
+    "/popups",
+  ]);
+  return groups
+    .filter((g) => !dropGroups.has(g.group))
+    .map((g) => {
+      if (g.group === "설정") {
+        return { ...g, items: g.items.filter((i) => i.href === "/settings") };
+      }
+      return { ...g, items: g.items.filter((i) => !dropHrefs.has(i.href)) };
+    });
+}
+
 export function DesktopSidebar() {
   const pathname = usePathname();
   const collapsed = useAdminUiStore((s) => s.sidebarCollapsed);
   const totoOn = useAuthStore((s) => s.site?.is_toto_enabled === true);
+  /** 슈퍼가 켠 제한 모드 + 요율로 들어온 플레이어(하부 파트너) — 동일 좁은 메뉴 */
+  const partnerLimited = useAuthStore(
+    (s) => s.user?.admin_partner_limited_ui === true || s.user?.role === "player",
+  );
+  const isSuperAdmin = useAuthStore((s) => s.user?.role === "super_admin");
 
-  const groups = useMemo(() => filterNavForToto(NAV_GROUPS_BASE, totoOn), [totoOn]);
+  const groups = useMemo(() => {
+    let g = filterNavForPartnerLimited(filterNavForToto(NAV_GROUPS_BASE, totoOn), partnerLimited);
+    if (isSuperAdmin) {
+      g = g.map((grp) => {
+        if (grp.group === "입출금") {
+          return {
+            ...grp,
+            items: [
+              { href: "/cash", label: "입출금 콘솔 (처리)", icon: "⚡" },
+              ...grp.items,
+            ],
+          };
+        }
+        return grp;
+      });
+    }
+    return g;
+  }, [totoOn, partnerLimited, isSuperAdmin]);
   const allHrefs = useMemo(() => groups.flatMap((g) => g.items.map((i) => i.href)), [groups]);
 
   const getDefaultOpen = () => {
@@ -192,9 +247,9 @@ export function DesktopSidebar() {
         collapsed ? "lg:w-16" : "lg:w-64"
       }`}
       style={{
-        background: "linear-gradient(180deg, #080f1e 0%, #060b14 60%, #080f1e 100%)",
-        borderRight: "1px solid rgba(212,175,55,0.12)",
-        boxShadow: "4px 0 32px rgba(0,0,0,0.6), inset -1px 0 0 rgba(212,175,55,0.06)",
+        background: "linear-gradient(180deg, #0f172a 0%, #0c1222 55%, #0f172a 100%)",
+        borderRight: "1px solid rgba(148,163,184,0.14)",
+        boxShadow: "4px 0 28px rgba(0,0,0,0.45), inset -1px 0 0 rgba(56,189,248,0.05)",
       }}
     >
       <div

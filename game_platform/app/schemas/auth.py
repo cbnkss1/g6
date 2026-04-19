@@ -25,6 +25,8 @@ class UserPublic(BaseModel):
     is_store_enabled: bool = False
     """같은 회원 테이블 기준. 게임 요율이 임계값 이상이면 ‘팀 수익(롤링) 대상’으로 true (역할과 무관)."""
     is_partner: bool = False
+    """슈퍼가 켠 하부 관리자(파트너) 제한 모드 — 좁은 메뉴·비밀번호만·요율 조정 불가."""
+    admin_partner_limited_ui: bool = False
     game_money_balance: Optional[str] = None
     rolling_point_balance: Optional[str] = None
 

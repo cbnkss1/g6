@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -12,6 +12,8 @@ type Partner = {
   id: number;
   login_id: string;
   display_name: string | null;
+  /** 트리에만 쓰는 임의 직책(마스터·본사 등). 권한과 무관 */
+  team_role_label: string | null;
   is_active: boolean;
   is_partner: boolean;
   game_money_balance: string;
@@ -36,6 +38,101 @@ const DEPTH_COLORS = ["#d4af37", "#60a5fa", "#34d399", "#a78bfa", "#f87171", "#f
 
 function fmtMoney(v: string | number) {
   return formatMoneyInt(v);
+}
+
+function TeamRoleInline({
+  partner,
+  token,
+  base,
+}: {
+  partner: Partner;
+  token: string;
+  base: string;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(partner.team_role_label ?? "");
+
+  useEffect(() => {
+    setDraft(partner.team_role_label ?? "");
+  }, [partner.id, partner.team_role_label]);
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${base}/admin/partners/${partner.id}/team-role`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ team_role_label: draft.trim() ? draft.trim() : null }),
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || "직책 저장 실패");
+      }
+      return r.json() as Promise<Partner>;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["partners"] });
+      setEditing(false);
+    },
+  });
+
+  if (editing) {
+    return (
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") mut.mutate();
+            if (e.key === "Escape") {
+              setDraft(partner.team_role_label ?? "");
+              setEditing(false);
+            }
+          }}
+          placeholder="예: 마스터, 본사, 서울 스태프"
+          maxLength={64}
+          className="max-w-[220px] rounded-lg border border-amber-500/35 bg-slate-950/90 px-2 py-0.5 text-[11px] text-slate-200 outline-none focus:border-amber-400/50"
+        />
+        <button
+          type="button"
+          onClick={() => mut.mutate()}
+          disabled={mut.isPending}
+          className="text-[10px] font-medium text-emerald-400 hover:underline disabled:opacity-50"
+        >
+          저장
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(partner.team_role_label ?? "");
+            setEditing(false);
+          }}
+          className="text-[10px] text-slate-600 hover:text-slate-400"
+        >
+          취소
+        </button>
+        {mut.isError ? (
+          <span className="text-[10px] text-red-400">{(mut.error as Error).message}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="클릭하여 직책 편집 (표시용, 권한과 무관)"
+      className={`mt-1 inline-flex max-w-full items-center rounded-md border px-1.5 py-0.5 text-left text-[10px] leading-tight ${
+        partner.team_role_label?.trim()
+          ? "border-amber-500/35 bg-amber-500/10 text-amber-100/95"
+          : "border-dashed border-slate-700 text-slate-600 hover:border-amber-500/30 hover:text-slate-400"
+      }`}
+    >
+      <span className="truncate">{partner.team_role_label?.trim() || "+ 직책 (임의)"}</span>
+    </button>
+  );
 }
 
 // ─── 하위 트리 행 (재귀 확장) ─────────────────────────────────────────────────
@@ -142,12 +239,13 @@ function PartnerRow({
           {partner.is_active ? "ON" : "OFF"}
         </span>
 
-        {/* 이름 + 아이디 */}
+        {/* 이름 + 아이디 + 직책(임의 라벨) */}
         <div className="flex-1 min-w-[120px]">
           <p className="font-semibold text-sm text-slate-100 truncate">
             {partner.display_name || partner.login_id}
           </p>
           <p className="text-[10px] text-slate-600 font-mono">{partner.login_id}</p>
+          <TeamRoleInline partner={partner} token={token} base={base} />
         </div>
 
         {/* 요율 */}
@@ -275,6 +373,7 @@ function CreateModal({
     login_id: "",
     password: "",
     display_name: "",
+    team_role_label: "",
     bank_name: "",
     bank_account: "",
     account_holder: "",
@@ -296,6 +395,7 @@ function CreateModal({
           login_id: form.login_id,
           password: form.password,
           display_name: form.display_name || undefined,
+          team_role_label: form.team_role_label.trim() || undefined,
           bank_name: form.bank_name || undefined,
           bank_account: form.bank_account || undefined,
           account_holder: form.account_holder || undefined,
@@ -394,6 +494,20 @@ function CreateModal({
           {field("아이디", "login_id")}
           {field("비밀번호", "password", "password")}
           {field("표시 이름", "display_name")}
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-medium uppercase tracking-widest text-slate-600">
+              트리 직책 (선택)
+            </span>
+            <input
+              type="text"
+              maxLength={64}
+              value={form.team_role_label}
+              onChange={(e) => setForm((p) => ({ ...p, team_role_label: e.target.value }))}
+              placeholder="예: 마스터, 본사, 서울 스태프"
+              className="admin-touch-input rounded-xl border border-slate-800 bg-slate-950/80 px-4 text-sm text-slate-100 outline-none focus:border-premium/40"
+            />
+            <span className="text-[9px] text-slate-700">목록에만 표시되며 권한·정산과 무관합니다.</span>
+          </label>
           {field("거래은행", "bank_name")}
           {field("계좌번호", "bank_account")}
           {field("예금주", "account_holder")}
@@ -687,7 +801,8 @@ export default function AgentsPage() {
           </h1>
           <p className="text-[10px] text-slate-600 mt-0.5 leading-relaxed">
             같은 회원 DB입니다. 추천인만 맞으면 누구나 팀을 데려와 A→B→C→… 처럼 단계가 쌓이고, 요율이 있으면 그
-            흐름에서 정산·롤링 대상이 됩니다. ▶ 로 직속 한 단씩 펼칩니다.
+            흐름에서 정산·롤링 대상이 됩니다. ▶ 로 직속 한 단씩 펼칩니다. 각 행의{" "}
+            <strong className="text-slate-500">직책</strong>은 트리 표시용 이름(마스터·본사·스태프 등)만 적습니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

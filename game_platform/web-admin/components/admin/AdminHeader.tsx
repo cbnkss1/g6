@@ -34,12 +34,26 @@ export function AdminHeader() {
     retry: 0,
   });
 
-  const roleBadge = role === "super_admin" ? "SUPER" : role === "owner" ? "OWNER" : "STAFF";
-  const roleBadgeColor = role === "super_admin"
-    ? "bg-premium/15 border-premium/40 text-premium"
-    : role === "owner"
-    ? "bg-blue-500/15 border-blue-500/40 text-blue-300"
-    : "bg-slate-700/50 border-slate-600 text-slate-400";
+  const roleBadge =
+    role === "super_admin"
+      ? "SUPER"
+      : role === "owner"
+        ? "OWNER"
+        : role === "staff"
+          ? "STAFF"
+          : role === "player"
+            ? "PARTNER"
+            : (role ?? "—").toUpperCase();
+  const roleBadgeColor =
+    role === "super_admin"
+      ? "bg-premium/15 border-premium/40 text-premium"
+      : role === "owner"
+        ? "bg-blue-500/15 border-blue-500/40 text-blue-300"
+        : role === "staff"
+          ? "bg-slate-700/50 border-slate-600 text-slate-400"
+          : role === "player"
+            ? "bg-emerald-500/15 border-emerald-500/35 text-emerald-300"
+            : "bg-slate-700/50 border-slate-600 text-slate-400";
 
   const [livePulse, setLivePulse] = useState(false);
   useEffect(() => {

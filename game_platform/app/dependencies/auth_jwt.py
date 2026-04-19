@@ -7,10 +7,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.constants import ADMIN_ROLES, USER_ROLE_SUPER_ADMIN
+from app.constants import USER_ROLE_SUPER_ADMIN
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
+from app.services.partner_utils import user_has_admin_tree_access
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -47,14 +48,17 @@ def get_current_user_from_token(
     return user
 
 
-def require_admin_user(user=Depends(get_current_user_from_token)):
-    """JWT로 인증된 어드민(업주·스태프·슈퍼). 플레이어 토큰은 403."""
-    if user.role not in ADMIN_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="어드민 전용 기능입니다.",
-        )
-    return user
+def require_admin_user(
+    user=Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+):
+    """JWT로 인증된 어드민: 슈퍼·총판·스태프 또는 롤링 요율이 있는 플레이어(파트너). 그 외 403."""
+    if user_has_admin_tree_access(db, user):
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="어드민 전용 기능입니다.",
+    )
 
 
 def require_super_admin(user=Depends(get_current_user_from_token)):

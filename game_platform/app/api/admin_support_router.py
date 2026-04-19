@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.constants import USER_ROLE_SUPER_ADMIN
@@ -20,6 +20,9 @@ from app.websockets.manager import admin_ws_manager
 
 router = APIRouter()
 
+# 파트너(비-슈퍼 어드민) → 슈퍼관리자 전용 문의. 목록은 본인·슈퍼만 열람.
+PARTNER_TO_SUPER_CATEGORY = "PARTNER_TO_SUPER"
+
 
 async def _broadcast_support_dashboard_refresh() -> None:
     await admin_ws_manager.broadcast_event("dashboard_refresh", {})
@@ -28,6 +31,11 @@ async def _broadcast_support_dashboard_refresh() -> None:
 class SupportTicketReplyBody(BaseModel):
     admin_reply: str = Field(..., min_length=1, max_length=20000)
     status: str = Field(default="ANSWERED", max_length=16)
+
+
+class PartnerToSuperTicketBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=20000)
 
 
 def _ticket_scope_user_ids(db: Session, viewer: User) -> Optional[List[int]]:
@@ -41,17 +49,27 @@ def admin_list_support_tickets(
     viewer: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
     status_filter: Optional[str] = Query(None, alias="status"),
+    category_filter: Optional[str] = Query(None, alias="category"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     filters = []
     if status_filter and status_filter.strip():
         filters.append(SupportTicket.status == status_filter.strip().upper())
+    if category_filter and category_filter.strip():
+        filters.append(SupportTicket.category == category_filter.strip().upper())
     scope = _ticket_scope_user_ids(db, viewer)
     if scope is not None:
         if not scope:
             return {"items": [], "total": 0, "limit": limit, "offset": offset}
         filters.append(SupportTicket.user_id.in_(scope))
+        # 파트너→슈퍼 문의는 작성자 본인만 조회 (상위 총판에게 비공개)
+        filters.append(
+            or_(
+                SupportTicket.category != PARTNER_TO_SUPER_CATEGORY,
+                SupportTicket.user_id == viewer.id,
+            )
+        )
 
     base = select(SupportTicket)
     count_stmt = select(func.count()).select_from(SupportTicket)
@@ -63,6 +81,63 @@ def admin_list_support_tickets(
     rows = list(
         db.scalars(base.order_by(desc(SupportTicket.created_at)).offset(offset).limit(limit)).all()
     )
+    return {
+        "items": [_admin_list_row(db, r) for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.post("/support/partner-to-super", summary="슈퍼관리자에게 문의 등록 (파트너)", status_code=201)
+def create_partner_to_super_ticket(
+    body: PartnerToSuperTicketBody,
+    background_tasks: BackgroundTasks,
+    viewer: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    sid = str(viewer.site_id)
+    row = SupportTicket(
+        user_id=viewer.id,
+        site_id=sid,
+        category=PARTNER_TO_SUPER_CATEGORY,
+        title=body.title.strip(),
+        body=body.body.strip(),
+        attached_bet_ids=None,
+        status="OPEN",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    background_tasks.add_task(_broadcast_support_dashboard_refresh)
+    return _admin_list_row(db, row)
+
+
+@router.get("/support/partner-to-super", summary="내가 보낸 슈퍼관리자 문의 목록")
+def list_my_partner_to_super_tickets(
+    viewer: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> Dict[str, Any]:
+    base = (
+        select(SupportTicket)
+        .where(
+            SupportTicket.user_id == viewer.id,
+            SupportTicket.category == PARTNER_TO_SUPER_CATEGORY,
+        )
+        .order_by(desc(SupportTicket.created_at))
+    )
+    count_stmt = (
+        select(func.count())
+        .select_from(SupportTicket)
+        .where(
+            SupportTicket.user_id == viewer.id,
+            SupportTicket.category == PARTNER_TO_SUPER_CATEGORY,
+        )
+    )
+    total = int(db.scalar(count_stmt) or 0)
+    rows = list(db.scalars(base.offset(offset).limit(limit)).all())
     return {
         "items": [_admin_list_row(db, r) for r in rows],
         "total": total,

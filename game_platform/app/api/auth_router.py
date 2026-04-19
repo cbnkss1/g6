@@ -1,16 +1,15 @@
 """어드민 JWT 로그인·세션 정보 + OTP 2차 인증 + Risk Engine 통합."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.constants import USER_ROLE_PLAYER
 from app.core.database import get_db
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.dependencies.auth_jwt import get_current_user_from_token, require_admin_user
 from app.models.site_config import SiteConfig
 from app.models.user import User
@@ -18,7 +17,7 @@ from app.schemas.auth import AdminLoginBody, LoginResponse, SiteConfigPublic, Us
 from app.services.admin_ip_allowlist import assert_admin_login_ip_allowed
 from app.services.audit_service import AuditService
 from app.services.otp_service import verify_totp
-from app.services.partner_utils import user_is_partner
+from app.services.partner_utils import user_has_admin_tree_access, user_is_partner
 from app.services.risk_engine import check_login_attempt
 
 router = APIRouter()
@@ -51,9 +50,15 @@ def _user_public(db: Session, user: User) -> UserPublic:
         site_id=str(user.site_id),
         is_store_enabled=bool(user.is_store_enabled),
         is_partner=user_is_partner(db, user.id),
+        admin_partner_limited_ui=bool(getattr(user, "admin_partner_limited_ui", False)),
         game_money_balance=str(user.game_money_balance),
         rolling_point_balance=str(user.rolling_point_balance),
     )
+
+
+class AdminSelfPasswordBody(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=4)
 
 
 @router.post("/login", response_model=LoginResponse, summary="어드민 로그인 (JWT + OTP + Risk)")
@@ -93,10 +98,13 @@ def admin_login(
     if not getattr(user, "is_active", True):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 계정입니다.")
 
-    if user.role == USER_ROLE_PLAYER:
+    if not user_has_admin_tree_access(db, user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="플레이어 계정은 메인 사이트 로그인을 이용해 주세요.",
+            detail=(
+                "관리자(파트너) 로그인은 슈퍼·총판·스태프이거나, "
+                "롤링 요율이 부여된 회원만 이용할 수 있습니다. 일반 회원은 메인 사이트 로그인을 이용해 주세요."
+            ),
         )
 
     assert_admin_login_ip_allowed(db, site_id=user.site_id, client_ip=client_ip)
@@ -161,6 +169,19 @@ def admin_me(
         "site": _site_public(site).model_dump(),
         "otp_enabled": bool(getattr(user, "otp_enabled", False)),
     }
+
+
+@router.patch("/me/password", summary="본인 로그인 비밀번호 변경")
+def admin_change_own_password(
+    body: AdminSelfPasswordBody,
+    user: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, bool]:
+    if not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다.")
+    user.hashed_password = hash_password(body.new_password)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/site-config", response_model=SiteConfigPublic, summary="분양 사이트 기능 플래그")

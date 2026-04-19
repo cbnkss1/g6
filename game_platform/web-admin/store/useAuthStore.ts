@@ -19,6 +19,8 @@ export type UserPublicState = {
   site_id: string;
   is_store_enabled?: boolean;
   is_partner?: boolean;
+  /** 슈퍼가 켠 하부 관리자(파트너) 제한 UI */
+  admin_partner_limited_ui?: boolean;
 };
 
 type AuthState = {

@@ -40,7 +40,13 @@ export function AuthGate({ children }: Props) {
 
   useEffect(() => {
     if (!storeReady) return;
-    if (!token && !preview) router.replace("/login");
+    if (!token && !preview) {
+      const qs = new URLSearchParams();
+      const path = `${window.location.pathname}${window.location.search}`;
+      if (!path.startsWith("/login")) qs.set("next", path);
+      const q = qs.toString();
+      router.replace(q ? `/login?${q}` : "/login");
+    }
   }, [storeReady, token, preview, router]);
 
   if (!storeReady) {
@@ -52,7 +58,14 @@ export function AuthGate({ children }: Props) {
     );
   }
 
-  if (!token && !preview) return null;
+  if (!token && !preview) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950 px-4">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-premium border-t-transparent" />
+        <p className="text-center text-sm text-slate-500">로그인이 필요합니다. 로그인 화면으로 이동합니다…</p>
+      </div>
+    );
+  }
   return (
     <>
       {preview && !token ? (

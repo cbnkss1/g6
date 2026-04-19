@@ -6,14 +6,28 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.user import UserGameRollingRate
+from app.constants import ADMIN_ROLES, USER_ROLE_PLAYER
+from app.models.user import User, UserGameRollingRate
 
 # 이 값 이상이면 파트너로 간주 (비즈니스: “0.00001%라도 있으면”)
 MIN_PARTNER_ROLLING_PERCENT = Decimal("0.00001")
+
+
+def user_has_admin_tree_access(db: Session, user: User) -> bool:
+    """
+    어드민 JWT·REST·WS 허용 여부.
+    슈퍼/총판/스태프 또는, 롤링 요율이 있는 플레이어(하부 파트너)만 True.
+    """
+    if user.role in ADMIN_ROLES:
+        return True
+    if user.role == USER_ROLE_PLAYER:
+        return user_is_partner(db, user.id)
+    return False
 
 
 def user_is_partner(db: Session, user_id: int) -> bool:

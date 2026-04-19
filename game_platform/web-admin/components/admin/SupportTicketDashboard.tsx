@@ -79,6 +79,7 @@ const CAT_LABEL: Record<string, string> = {
   GAME_VOID: "게임/적특",
   EVENT: "이벤트",
   OTHER: "기타",
+  PARTNER_TO_SUPER: "파트너→슈퍼",
 };
 
 export function SupportTicketDashboard() {

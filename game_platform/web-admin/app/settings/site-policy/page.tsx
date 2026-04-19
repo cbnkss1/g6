@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
@@ -419,8 +420,11 @@ export default function SitePolicyPage() {
             </label>
             <div className="mt-4 space-y-3 border-t border-slate-800/80 pt-4">
               <p className="text-xs text-slate-500">
-                아래를 끄면 <strong className="text-slate-400">총판·스태프</strong>는 해당 기능을 쓸 수 없습니다.{" "}
-                <strong className="text-slate-400">슈퍼관리자</strong>는 항상 지급·회수·상세 수정이 가능합니다.
+                아래는 <strong className="text-slate-400">사이트 전역</strong> 스위치입니다.{" "}
+                <strong className="text-slate-400">회원 목록</strong>의 지급·회수 버튼은 여기가 켜져 있고, 총판·스태프
+                계정에 지급·회수가 허용된 경우에만 표시됩니다(AND). 끄면 총판·스태프는 모두 불가이고,{" "}
+                <strong className="text-slate-400">슈퍼관리자</strong>는 항상 가능합니다. 계정별 플래그는 API로
+                조정합니다.
               </p>
               <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
                 <input
@@ -443,7 +447,9 @@ export default function SitePolicyPage() {
                   className="h-4 w-4 rounded border-slate-600"
                 />
                 <span>
-                  회원 상세 수정 허용 (<code className="text-slate-600">member_profile_edit_enabled</code>)
+                  (레거시) 회원 상세 수정 플래그 — 실제 프로필·연락처 저장은{" "}
+                  <strong className="text-slate-400">슈퍼관리자만</strong> 가능 (
+                  <code className="text-slate-600">member_profile_edit_enabled</code>)
                 </span>
               </label>
             </div>
