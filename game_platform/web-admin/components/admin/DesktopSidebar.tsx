@@ -120,7 +120,6 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     items: [
       { href: "/messages", label: "쪽지 발송", icon: "💬" },
       { href: "/popups", label: "플레이어 팝업", icon: "⊞" },
-      { href: "/support", label: "고객센터 (1:1)", icon: "✉" },
     ],
   },
   {
