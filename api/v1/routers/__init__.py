@@ -5,9 +5,9 @@ from lib.dependency.dependencies import check_use_api
 from api.v1.dependencies.current_connect import set_current_connect
 from api.v1.models import Tags
 from api.v1.routers import (
-    auth, autosave, board, board_good, board_new, captcha, config, content,
-    current_connect, faq, member, memo, menu, newwin, point, poll, popular,
-    qa, scrap, search, visit, group
+    auth, autosave, board, board_good, board_new, captcha, casino, config, content,
+    current_connect, dashboard, faq, member, memo, menu, newwin, point, poll, popular,
+    qa, scrap, search, visit, group, intelligence,
 )
 
 
@@ -37,3 +37,6 @@ router.include_router(board_new.router, prefix="/board-new", tags=[Tags.BOARD_NE
 router.include_router(board_good.router, tags=[Tags.AJAX_GOOD])
 router.include_router(autosave.router, tags=[Tags.AJAX_AUTOSAVE])
 router.include_router(visit.router, tags=[Tags.VISIT])
+router.include_router(dashboard.router, prefix="/dashboard", tags=["메인대시보드"])
+router.include_router(intelligence.router, tags=["인텔리전스"])
+router.include_router(casino.router, tags=[Tags.CASINO])

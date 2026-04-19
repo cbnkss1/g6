@@ -565,6 +565,34 @@ def thumbnail(source_file: str, target_path: str = None, width: int = 200, heigh
         return ""
 
 
+def filesystem_path_to_public_url(fs_path: str) -> str:
+    """
+    thumbnail() 등이 반환한 로컬 경로를 웹 경로(data/…, static/…)로 정규화.
+    절대경로(/var/www/…/data/…)인 경우에도 data/… 로 맞춤.
+    """
+    if not fs_path:
+        return ""
+    norm = os.path.normpath(fs_path).replace("\\", "/")
+    for marker in ("/data/", "/static/"):
+        idx = norm.find(marker)
+        if idx >= 0:
+            return norm[idx + 1 :]
+    stripped = norm.lstrip("./")
+    if stripped.startswith("data/") or stripped.startswith("static/"):
+        return stripped
+    return stripped
+
+
+def public_url_ensure_leading_slash(path: str) -> str:
+    """브라우저용 절대 경로(/data/…, /static/…). 목록 스킨에서 상대경로로 깨지는 것 방지."""
+    if not path:
+        return ""
+    p = path.strip()
+    if p.startswith("http://") or p.startswith("https://"):
+        return p
+    return p if p.startswith("/") else "/" + p
+
+
 def get_editor_image(contents: str, view: bool = True) -> list:
     """에디터에서 이미지 태그를 추출한다.
 

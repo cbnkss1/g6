@@ -13,7 +13,7 @@ from core.models import WriteBaseModel
 from core.template import UserTemplates
 from lib.member import get_admin_type
 from lib.board_lib import (
-    set_image_width, url_auto_link, BoardConfig, get_list_thumbnail,
+    BoardConfig, get_list_thumbnail,
     render_latest_posts, generate_reply_character, is_secret_write,
     is_owner, insert_board_new, set_write_delay
 )
@@ -36,8 +36,6 @@ from service.popular_service import PopularService
 
 router = APIRouter()
 templates = UserTemplates()
-templates.env.filters["set_image_width"] = set_image_width
-templates.env.filters["url_auto_link"] = url_auto_link
 templates.env.globals["get_admin_type"] = get_admin_type
 templates.env.globals["get_unique_id"] = get_unique_id
 templates.env.globals["board_config"] = BoardConfig
@@ -413,6 +411,8 @@ async def read_post(
         "is_write": service.is_write_level(),
         "is_reply": service.is_reply_level(),
         "is_comment_write": service.is_comment_level(),
+        # freeslot/cyber_grid 스킨 본문 필터 호환(미정의 시 Jinja 오류 방지)
+        "content_path_images": None,
     }
     return templates.TemplateResponse(f"/board/{board.bo_skin}/read_post.html", context)
 

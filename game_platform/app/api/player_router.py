@@ -4,10 +4,10 @@ from __future__ import annotations
 import secrets
 import uuid
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
@@ -49,6 +49,19 @@ def _site_public(site: SiteConfig) -> SiteConfigPublic:
         is_powerball_enabled=site.is_powerball_enabled,
         is_toto_enabled=site.is_toto_enabled,
     )
+
+
+def _resolve_site_id_for_public_pages(db: Session, site_id: Optional[str]) -> uuid.UUID:
+    """`GET /public-pages` — site_id 없으면 기본 테넌트."""
+    if site_id and site_id.strip():
+        try:
+            sid = uuid.UUID(site_id.strip())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="site_id 형식 오류") from e
+        if db.get(SiteConfig, sid) is None:
+            raise HTTPException(status_code=404, detail="사이트를 찾을 수 없습니다.")
+        return sid
+    return DEFAULT_SITE_ID
 
 
 def _user_public(db: Session, user: User) -> UserPublic:
@@ -258,6 +271,42 @@ code{color:#a5b4fc;font-size:.85em;}
 <button type="button" class="btn" onclick="if(history.length>1)history.back();else location.href='/'">첫 화면으로</button>
 <small>운영 서버에서는 환경변수 <code>GAME_PLATFORM_PLAYER_WEB_HOME_URL</code>을 넣으면 이 안내 대신 메인으로 자동 이동합니다.</small>
 </body></html>"""
+
+
+_DEFAULT_PLAYER_PAGES: Dict[str, str] = {
+    "events": "",
+    "faq": "",
+    "terms": "",
+    "domain": "",
+    "support": "",
+    "mypage_intro": "",
+}
+
+
+@router.get("/public-pages", summary="플레이어 공개 페이지 HTML (site_policies.player_pages)")
+def player_public_pages(
+    site_id: Optional[str] = Query(None, description="미지정 시 기본 사이트"),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    어드민 `site_policies.player_pages` 에 저장된 HTML/문구.
+    키가 없으면 빈 문자열로 채워 반환합니다.
+    """
+    sid = _resolve_site_id_for_public_pages(db, site_id)
+    site = db.get(SiteConfig, sid)
+    if site is None:
+        raise HTTPException(status_code=404, detail="사이트 설정을 찾을 수 없습니다.")
+    raw: Dict[str, Any] = {}
+    if site.site_policies and isinstance(site.site_policies, dict):
+        pp = site.site_policies.get("player_pages")
+        if isinstance(pp, dict):
+            raw = pp
+    pages = dict(_DEFAULT_PLAYER_PAGES)
+    for k in _DEFAULT_PLAYER_PAGES:
+        v = raw.get(k)
+        if isinstance(v, str):
+            pages[k] = v
+    return {"site_id": str(sid), "pages": pages}
 
 
 @router.get("/login", include_in_schema=False, response_model=None)

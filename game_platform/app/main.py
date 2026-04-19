@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin_player_notify_router import router as admin_player_notify_router
 from app.api.admin_router import router as admin_router
+from app.api.admin_hero_slide_router import router as admin_hero_slide_router
 from app.api.admin_site_popup_router import router as admin_site_popup_router
 from app.api.admin_support_router import router as admin_support_router
 from app.api.agent_router import router as agent_router
@@ -83,6 +84,7 @@ app.include_router(auth_router, prefix="/admin", tags=["auth"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(admin_player_notify_router, prefix="/admin", tags=["admin-notify"])
 app.include_router(admin_site_popup_router, prefix="/admin", tags=["admin-popups"])
+app.include_router(admin_hero_slide_router, prefix="/admin", tags=["admin-hero"])
 app.include_router(admin_support_router, prefix="/admin", tags=["admin-support"])
 app.include_router(toto_router, prefix="/admin", tags=["admin-features"])
 app.include_router(sports_router, prefix="/admin", tags=["sports"])

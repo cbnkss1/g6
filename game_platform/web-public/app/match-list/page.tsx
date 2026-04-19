@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { MockSportsOddsPanel } from "@/components/MockSportsOddsPanel";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -112,8 +113,10 @@ function matchKickoffPassedClient(iso: string | null): boolean {
 }
 
 /* ══════════════════════════════════════════════════════ */
-export default function SportsPage() {
+function SportsPageInner() {
   const { token, hydrated, openLogin } = usePlayerAuth();
+  const searchParams = useSearchParams();
+  const presetAppliedFor = useRef<string | null>(null);
   const [items, setItems] = useState<SportsMatchRow[]>([]);
   const [closedItems, setClosedItems] = useState<SportsMatchRow[]>([]);
   const [balance, setBalance] = useState("0");
@@ -209,6 +212,30 @@ export default function SportsPage() {
     });
     return list;
   }, [sourceRows]);
+
+  /** 메인 카드 `?preset=epl|nba|lck` → 리그 탭 자동 선택 (preset 바뀌면 다시 시도) */
+  useEffect(() => {
+    const raw = (searchParams.get("preset") || "").trim().toLowerCase();
+    if (!raw) {
+      presetAppliedFor.current = null;
+      return;
+    }
+    if (leagues.length <= 1) return;
+    if (presetAppliedFor.current === raw) return;
+    const rest = leagues.filter((l) => l !== "전체");
+    let hit: string | undefined;
+    if (raw === "epl") {
+      hit = rest.find((l) => /premier|epl|프리미어|프리미어리그/i.test(l));
+    } else if (raw === "nba") {
+      hit = rest.find((l) => /nba|농구|국바/i.test(l));
+    } else if (raw === "lck") {
+      hit = rest.find((l) => /lck|lol|e스포츠|e-스포츠|리그 오브 레전드/i.test(l));
+    }
+    if (hit) {
+      setActiveLeague(hit);
+      presetAppliedFor.current = raw;
+    }
+  }, [searchParams, leagues]);
 
   /* 필터된 경기 */
   const filtered = useMemo(() =>
@@ -734,5 +761,22 @@ export default function SportsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function SportsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen flex-col bg-[#060b14] text-slate-200">
+          <SiteHeader />
+          <main className="flex flex-1 items-center justify-center px-4 text-sm text-slate-500">
+            스포츠 목록을 불러오는 중…
+          </main>
+        </div>
+      }
+    >
+      <SportsPageInner />
+    </Suspense>
   );
 }

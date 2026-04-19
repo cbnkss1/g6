@@ -958,3 +958,20 @@ class Login(Base):
     lo_datetime = Column(DateTime, nullable=False, default=func.now())
     lo_location = Column(Text, nullable=False)
     lo_url = Column(Text, nullable=False)
+
+
+class IntelligenceFeed(Base):
+    """
+    인텔리전스 피드 — 메인 대시보드 02·03·Execution Layer 등.
+    """
+
+    __tablename__ = DB_TABLE_PREFIX + "intelligence_feed"
+
+    if_id = Column(Integer, primary_key=True, autoincrement=True)
+    if_external_id = Column(String(128), nullable=False, unique=True, index=True)
+    if_type = Column(String(32), nullable=False, default="")
+    if_title = Column(String(500), nullable=False, default="")
+    if_summary = Column(Text, nullable=False, default="")
+    if_href = Column(String(500), nullable=False, default="")
+    if_thumbnail_url = Column(String(500), nullable=False, default="")
+    if_published_at = Column(DateTime, nullable=False, index=True)

@@ -22,6 +22,11 @@ from app.services.sports_bet_history_bridge import create_bet_history_for_sports
 from app.services.bet_limit_service import effective_limits
 from app.services.player_presence import touch_player_presence
 from app.services.sports_betting_time import match_kickoff_has_passed, utc_now
+from app.services.casino_wallet_service import (
+    get_casino_wallet_status,
+    transfer_casino_to_main,
+    transfer_main_to_casino,
+)
 from app.services.game_provider_policy import (
     assert_launch_allowed,
     filter_catalog_provider_rows,
@@ -516,6 +521,41 @@ def player_game_provider_flags(
 ) -> dict[str, Any]:
     site = db.get(SiteConfig, user.site_id)
     return merged_provider_flags(site)
+
+
+# ---------------------------------------------------------------------------
+# 카지노 지갑 ↔ 메인 게임머니 (Plxmed)
+# ---------------------------------------------------------------------------
+
+
+class CasinoWalletAmountBody(BaseModel):
+    amount: str = Field(..., description="전환 금액 (문자열)")
+
+
+@router.get("/games/casino/wallet-status", summary="카지노 지갑·게임머니 잔액")
+def player_casino_wallet_status(
+    user: User = Depends(require_player_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return get_casino_wallet_status(db, user)
+
+
+@router.post("/games/casino/wallet/transfer-to-casino", summary="게임머니 → 카지노 지갑")
+def player_casino_transfer_to_casino(
+    body: CasinoWalletAmountBody,
+    user: User = Depends(require_player_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return transfer_main_to_casino(db, user, body.amount)
+
+
+@router.post("/games/casino/wallet/transfer-from-casino", summary="카지노 지갑 → 게임머니")
+def player_casino_transfer_from_casino(
+    body: CasinoWalletAmountBody,
+    user: User = Depends(require_player_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return transfer_casino_to_main(db, user, body.amount)
 
 
 class CasinoLaunchBody(BaseModel):

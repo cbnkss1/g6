@@ -9,9 +9,11 @@ from pathlib import Path
 
 class CustomConfig(Config):
     """.env 파일을 utf-8로 읽기 위한 CustomConfig 클래스"""
-    def _read_file(self, file_name: str | Path) -> dict[str, str]:
+    # Starlette Config.__init__ 가 _read_file(path, encoding) 형태로 호출함 (버전별 시그니처 호환)
+    def _read_file(self, file_name: str | Path, encoding: str | None = None) -> dict[str, str]:
         file_values: dict[str, str] = {}
-        with open(file_name, encoding="utf-8") as input_file:
+        enc = encoding or "utf-8"
+        with open(file_name, encoding=enc) as input_file:
             for line in input_file.readlines():
                 line = line.strip()
                 if "=" in line and not line.startswith("#"):

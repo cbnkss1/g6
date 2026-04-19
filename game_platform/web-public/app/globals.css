@@ -42,3 +42,17 @@ body {
 .nav-pill {
   @apply rounded-lg px-3 py-2 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-quantum-cyan;
 }
+
+/* 메인 하단 신뢰 티커 (무한 루프) */
+@keyframes home-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-home-marquee {
+  animation: home-marquee 48s linear infinite;
+}

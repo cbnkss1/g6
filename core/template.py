@@ -21,7 +21,14 @@ from lib.common import (
     CAPTCHA_PATH, EDITOR_PATH, get_admin_menus, read_version, StringEncrypt
 )
 from lib.visit import get_total_visit
-from lib.template_filters import datetime_format, number_format, set_query_params
+from lib.template_filters import (
+    datetime_format,
+    fix_content_image_paths,
+    freeslot_content_clean,
+    number_format,
+    set_query_params,
+    unified_title,
+)
 from lib.template_functions import (
     editor_macro, get_member_icon, get_member_image, get_selected,
     option_selected, option_array_checked, subject_sort_link
@@ -143,6 +150,14 @@ class UserTemplates(Jinja2Templates):
             self.env.filters["datetime_format"] = datetime_format
             self.env.filters["number_format"] = number_format
             self.env.filters["set_query_params"] = set_query_params
+            self.env.filters["unified_title"] = unified_title
+            self.env.filters["fix_content_image_paths"] = fix_content_image_paths
+            self.env.filters["freeslot_content_clean"] = freeslot_content_clean
+            from lib.board_lib import set_image_width as _set_image_width
+            from lib.board_lib import url_auto_link as _url_auto_link
+
+            self.env.filters["set_image_width"] = _set_image_width
+            self.env.filters["url_auto_link"] = _url_auto_link
             # 템플릿 전역 설정
             self.env.globals["editor_macro"] = editor_macro
             self.env.globals["getattr"] = getattr
@@ -239,6 +254,14 @@ class AdminTemplates(Jinja2Templates):
             self.env.filters["datetime_format"] = datetime_format
             self.env.filters["number_format"] = number_format
             self.env.filters["set_query_params"] = set_query_params
+            self.env.filters["unified_title"] = unified_title
+            self.env.filters["fix_content_image_paths"] = fix_content_image_paths
+            self.env.filters["freeslot_content_clean"] = freeslot_content_clean
+            from lib.board_lib import set_image_width as _admin_set_image_width
+            from lib.board_lib import url_auto_link as _admin_url_auto_link
+
+            self.env.filters["set_image_width"] = _admin_set_image_width
+            self.env.filters["url_auto_link"] = _admin_url_auto_link
             # 템플릿 전역 설정
             self.env.globals["editor_macro"] = editor_macro
             self.env.globals["getattr"] = getattr

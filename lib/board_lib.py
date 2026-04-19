@@ -16,8 +16,8 @@ from core.exception import AlertException
 from core.models import Board, BoardNew, Member, WriteBaseModel
 from core.template import TemplateService, UserTemplates
 from lib.common import (
-    FileCache, StringEncrypt, cut_name, dynamic_create_write_table, get_admin_email,
-    get_admin_email_name, get_editor_image, thumbnail
+    FileCache, StringEncrypt, cut_name, dynamic_create_write_table, filesystem_path_to_public_url,
+    get_admin_email, get_admin_email_name, get_editor_image, public_url_ensure_leading_slash, thumbnail,
 )
 from lib.mail import mailer
 from lib.member import MemberDetails
@@ -773,14 +773,25 @@ def get_list_thumbnail(request: Request, board: Board, write: WriteBaseModel, th
                 print(e)
                 continue
 
-    # 섬네일 생성
+    # 섬네일 생성 — 항상 /data/… 또는 /static/… (스킨에서 상대경로로 깨짐 방지)
     if source_file:
-        result["src"] = thumbnail(source_file, width=thumb_width, height=thumb_height, **kwargs)
-    # 이미지가 없을 때
+        result["src"] = public_url_ensure_leading_slash(
+            filesystem_path_to_public_url(
+                thumbnail(source_file, width=thumb_width, height=thumb_height, **kwargs)
+            )
+        )
     else:
-        result["src"] = thumbnail("./static/img/dummy-donotremove.png",
-                        target_path="./data/thumbnail_tmp",
-                        width=thumb_width, height=thumb_height, **kwargs)
+        result["src"] = public_url_ensure_leading_slash(
+            filesystem_path_to_public_url(
+                thumbnail(
+                    "./static/img/dummy-donotremove.png",
+                    target_path="./data/thumbnail_tmp",
+                    width=thumb_width,
+                    height=thumb_height,
+                    **kwargs,
+                )
+            )
+        )
         result["noimg"] = "img_not_found"
 
     return result

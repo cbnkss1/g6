@@ -1,8 +1,9 @@
 # Jinja2 Templates 사용자 정의 필터
 # ============================================================================
+import html
 import re
 from datetime import datetime
-from typing import Union
+from typing import Any, Union
 
 from fastapi import Request
 from starlette.datastructures import URL
@@ -95,3 +96,46 @@ def set_query_params(url: Union[URL, str], request: Request,
     url = url.replace_query_params(**set_params)
 
     return url
+
+
+def unified_title(value: Any) -> str:
+    """제목을 메타/OG용 일반 텍스트로 정규화(태그 제거·엔티티 디코드)."""
+    if value is None:
+        return ""
+    s = str(value)
+    s = re.sub(r"<[^>]+>", "", s)
+    return html.unescape(s).strip()
+
+
+def fix_content_image_paths(
+    content: Any,
+    path_images: Any = None,
+    bo_table: str = "",
+) -> str:
+    """본문 HTML의 img src를 /data/… · /static/… 절대 경로로 보정. path_images·bo_table은 확장용."""
+    del path_images, bo_table  # 호환 시그니처
+    if content is None:
+        return ""
+    if not isinstance(content, str):
+        content = str(content)
+    from lib.common import filesystem_path_to_public_url, public_url_ensure_leading_slash
+
+    def fix_src(m: re.Match) -> str:
+        quote, inner = m.group(1), m.group(2)
+        u = inner.strip()
+        if not u or u.startswith(("http://", "https://", "//", "data:", "/")):
+            return m.group(0)
+        pub = filesystem_path_to_public_url(u)
+        if not pub:
+            pub = u.lstrip("./")
+        fixed = public_url_ensure_leading_slash(pub)
+        return f"src={quote}{fixed}{quote}"
+
+    return re.sub(r'(?i)\bsrc=(["\'])([^"\']*)\1', fix_src, content)
+
+
+def freeslot_content_clean(content: Any) -> str:
+    """freeslot/cyber_grid 본문 후처리(필요 시 확장). 현재는 그대로 통과."""
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else str(content)

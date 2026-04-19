@@ -1,9 +1,20 @@
 <div id="member_signed_out" class="member_sign">
 
+    <a href="/game_lobby" class="sp-login-hero" title="게임 로비">
+        <img src="/static/img/slotpass_logo.png" alt="SLOTPASS" width="280" height="80" loading="lazy" decoding="async">
+    </a>
+
     <div class="sign_tab">
         <h2><span class="blind">회원</span>로그인</h2>
         <a href="/bbs/login" class="in">로그인</a>
         <a href="/bbs/register" class="join">회원가입</a>
+    </div>
+
+    <div class="sp-login-quick" aria-label="바로가기">
+        <a href="/game_lobby"><i class="fa fa-gamepad" aria-hidden="true"></i> 게임로비</a>
+        <a href="/bbs/attendance"><i class="fa fa-calendar-check" aria-hidden="true"></i> 출석</a>
+        <a href="/board/free"><i class="fa fa-comments" aria-hidden="true"></i> 자유</a>
+        <a href="/board/no_pay"><i class="fa fa-gift" aria-hidden="true"></i> 이벤트</a>
     </div>
 
     <form name="foutlogin" action="/bbs/login" onsubmit="return fhead_submit(this);" method="post" autocomplete="off">

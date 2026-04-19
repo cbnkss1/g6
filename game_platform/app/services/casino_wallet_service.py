@@ -23,10 +23,7 @@ def _ledger_only_transfers() -> bool:
     """True면 Plxmed 없이 원장만 — 게임 속 잔고와 맞지 않음(배팅 불가). 데모 UI(NEXT_PUBLIC_DEMO)와 별개."""
     from app.core.config import settings as s
 
-    return bool(
-        getattr(s, "PLXMED_LEDGER_ONLY_TRANSFERS", False)
-        or getattr(s, "PLXMED_TRANSFER_DEMO_MODE", False)
-    )
+    return bool(s.PLXMED_LEDGER_ONLY_TRANSFERS or s.PLXMED_TRANSFER_DEMO_MODE)
 
 
 def is_casino_transfer_ledger_only() -> bool:

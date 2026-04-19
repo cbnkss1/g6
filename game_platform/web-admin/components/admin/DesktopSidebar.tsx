@@ -120,6 +120,7 @@ const NAV_GROUPS_BASE: NavGroup[] = [
     items: [
       { href: "/messages", label: "쪽지 발송", icon: "💬" },
       { href: "/popups", label: "플레이어 팝업", icon: "⊞" },
+      { href: "/hero", label: "메인 히어로", icon: "▣" },
     ],
   },
   {
@@ -163,6 +164,7 @@ function filterNavForPartnerLimited(groups: NavGroup[], limited: boolean): NavGr
     "/audit",
     "/messages",
     "/popups",
+    "/hero",
   ]);
   return groups
     .filter((g) => !dropGroups.has(g.group))

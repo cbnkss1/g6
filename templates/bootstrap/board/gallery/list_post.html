@@ -119,7 +119,7 @@
                                 {% else %}
                                     {% set thumbnail=get_list_thumbnail(request, board, write, gallery_width, gallery_height) %}
                                     {% if thumbnail.src %}
-                                        <img src="/{{ thumbnail.src }}" alt="{{ thumbnail.alt }}">
+                                        <img src="{{ thumbnail.src }}" alt="{{ thumbnail.alt }}">
                                     {% else %}
                                         <span class="no_image" style="{{ line_height_style }}">no image</span>
                                     {% endif %}

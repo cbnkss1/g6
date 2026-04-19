@@ -2,24 +2,469 @@
 
 {% block title %}{{ request.state.title }}{% endblock title %}
 
+{% block head %}
+<link rel="stylesheet" href="/static/css/quantum_editorial_shell.css?ver=1.7">
+<style>
+/* 메인만: 본문 폭 — sp-site-width(1240) + flex min-content 붕괴로 좁은 띠 보이던 현상 제거 */
+.sp-content-wrap.sp-site-width {
+  width: 100% !important;
+  max-width: min(1680px, 98vw) !important;
+  box-sizing: border-box;
+}
+.sp-dash-root { max-width: min(1680px, 96vw); margin: 0 auto; padding: 0 12px 48px; box-sizing: border-box; }
+.sp-q-hero {
+  background: linear-gradient(165deg, rgba(12, 22, 42, 0.95), rgba(6, 10, 22, 0.98));
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 16px;
+  padding: 28px 28px 22px;
+  margin-bottom: 20px;
+  box-shadow: 0 0 40px rgba(34, 211, 238, 0.08);
+}
+.sp-q-kicker { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #7dd3fc; margin: 0 0 8px; }
+.sp-q-title { font-size: clamp(20px, 2.8vw, 32px); font-weight: 800; color: #ffe566; margin: 0 0 12px; letter-spacing: 0.03em; text-shadow: 0 0 24px rgba(255, 215, 0, 0.25); }
+.sp-q-sub { font-size: 14px; line-height: 1.55; color: #cbd5e1; margin: 0 0 18px; }
+.sp-q-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.sp-q-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 18px; border-radius: 999px; font-size: 13px; font-weight: 700; text-decoration: none;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.22), rgba(8, 20, 40, 0.9));
+  color: #e0f7ff;
+}
+.sp-q-btn--ghost {
+  background: rgba(15, 23, 42, 0.6);
+  color: #bae6fd;
+}
+.sp-q-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.sp-q-chip {
+  font-size: 11px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.35); color: #a5f3fc; background: rgba(8, 20, 40, 0.65);
+}
+.sp-q-metrics {
+  display: flex; flex-wrap: wrap; gap: 12px 20px; font-size: 12px; color: #94a3b8;
+  border-top: 1px solid rgba(34, 211, 238, 0.15); padding-top: 12px;
+}
+.sp-q-metrics span strong { color: #22d3ee; font-weight: 700; }
+.sp-dash-row { display: grid; grid-template-columns: 1fr min(360px, 100%); gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .sp-dash-row { grid-template-columns: 1fr; } }
+.sp-dash-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sp-dash-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .sp-dash-two { grid-template-columns: 1fr; } }
+.sp-q-card {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(8, 12, 24, 0.96));
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 12px; padding: 14px 16px; min-height: 120px;
+}
+.sp-q-card h3 {
+  margin: 0 0 10px; font-size: 13px; font-weight: 800; letter-spacing: 0.06em;
+  color: #fde047; text-transform: uppercase;
+}
+.sp-q-card .sp-q-list { margin: 0; padding: 0; list-style: none; font-size: 12px; color: #cbd5e1; line-height: 1.45; }
+.sp-q-card .sp-q-list li { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.sp-q-card .sp-q-list a { color: #7dd3fc; text-decoration: none; }
+.sp-q-card .sp-q-list a:hover { text-decoration: underline; }
+.sp-q-card .tag { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-right: 6px; font-weight: 700; }
+.sp-q-card .tag-post { background: rgba(34, 211, 238, 0.2); color: #a5f3fc; }
+.sp-q-card .tag-med { background: rgba(251, 191, 36, 0.2); color: #fcd34d; }
+.sp-q-card .tag-crit { background: rgba(248, 113, 113, 0.25); color: #fecaca; }
+.sp-q-card .sp-sig-board { color: #94a3b8; font-size: 10px; margin-right: 4px; }
+.sp-q-wide h3 { color: #fde047; }
+.sp-q-intel-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1024px) { .sp-q-intel-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .sp-q-intel-cards { grid-template-columns: 1fr; } }
+.sp-q-intel-card {
+  position: relative;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 10px;
+  padding: 12px 12px 14px;
+  background: rgba(6, 10, 22, 0.75);
+  min-height: 120px;
+}
+.sp-q-intel-card .sp-ic-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.sp-q-intel-card .sp-ic-time { font-size: 10px; color: #64748b; white-space: nowrap; }
+.sp-q-intel-card .sp-ic-title { font-size: 13px; font-weight: 700; color: #f1f5f9; margin: 0 0 6px; line-height: 1.35; }
+.sp-q-intel-card .sp-ic-sum { font-size: 11px; color: #94a3b8; line-height: 1.45; margin: 0; }
+.sp-tag-live { background: rgba(239, 68, 68, 0.25); color: #fecaca; border: 1px solid rgba(248, 113, 113, 0.45); }
+.sp-tag-casino { background: rgba(234, 179, 8, 0.2); color: #fde047; border: 1px solid rgba(250, 204, 21, 0.4); }
+.sp-tag-whale { background: rgba(59, 130, 246, 0.25); color: #bfdbfe; border: 1px solid rgba(96, 165, 250, 0.45); }
+.sp-tag-market { background: rgba(34, 197, 94, 0.2); color: #bbf7d0; border: 1px solid rgba(74, 222, 128, 0.4); }
+.sp-tag-default { background: rgba(148, 163, 184, 0.2); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.35); }
+.sp-tag-pill { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 6px; display: inline-block; }
+.sp-q-terminal {
+  margin: 0; padding: 14px 16px; border-radius: 10px;
+  background: #020617; border: 1px solid rgba(34, 211, 238, 0.25);
+  color: #5eead4; font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.55;
+  white-space: pre-wrap; overflow-x: auto;
+}
+.sp-dash-aside {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(6, 10, 22, 0.98));
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 12px; padding: 14px; position: sticky; top: 12px;
+}
+.sp-dash-aside .member_sign { margin-bottom: 14px; }
+.sp-dash-aside .member_sign h2 { font-size: 14px; color: #e2e8f0; }
+.sp-dash-aside .sign_menu a { color: #bae6fd; }
+#sp-coinness-box { font-size: 11px; color: #94a3b8; }
+#sp-coinness-box h4 {
+  margin: 14px 0 8px; font-size: 11px; color: #fde047; letter-spacing: 0.1em;
+  text-transform: uppercase; border-top: 1px solid rgba(34, 211, 238, 0.12); padding-top: 12px;
+}
+#sp-coinness-box h4:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+#sp-coinness-box .coin-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+#sp-coinness-box .coin-sym { color: #e2e8f0; font-weight: 700; }
+#sp-coinness-box .coin-price { color: #7dd3fc; font-size: 10px; }
+#sp-coinness-box .casino-line { font-size: 11px; color: #cbd5e1; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); line-height: 1.4; }
+#sp-coinness-box .pulse-row { display: flex; justify-content: space-between; padding: 3px 0; color: #cbd5e1; }
+/* 참고 UI: 2열 포털 카드 — 시안 보더·골드 타이틀·더보기/바로가기 */
+.sp-portal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 0 0 28px;
+  width: 100%;
+}
+@media (max-width: 720px) { .sp-portal-grid { grid-template-columns: 1fr; } }
+.sp-portal-card {
+  background: linear-gradient(165deg, rgba(12, 18, 36, 0.98), rgba(6, 10, 22, 0.99));
+  border: 1px solid rgba(34, 211, 238, 0.42);
+  border-radius: 14px;
+  padding: 16px 18px 18px;
+  box-shadow: 0 0 22px rgba(34, 211, 238, 0.1);
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  box-sizing: border-box;
+}
+.sp-portal-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sp-portal-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a5f3fc;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(8, 20, 40, 0.65);
+}
+.sp-portal-more {
+  font-size: 12px;
+  font-weight: 700;
+  color: #22d3ee;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sp-portal-more:hover { text-decoration: underline; color: #7dd3fc; }
+.sp-portal-title {
+  margin: 0 0 10px;
+  font-size: clamp(18px, 2.2vw, 24px);
+  font-weight: 800;
+  color: #fde047;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 18px rgba(253, 224, 71, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sp-portal-ico { font-size: 1.25em; line-height: 1; }
+.sp-portal-desc {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #cbd5e1;
+  flex: 1 1 auto;
+}
+.sp-portal-go {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.2), rgba(8, 20, 40, 0.85));
+  color: #e0f7ff;
+}
+.sp-portal-go:hover { filter: brightness(1.08); color: #fff; }
+</style>
+{% endblock head %}
+
 {% block content %}
-    <h2 class="blind">최신글</h2>
-    <div class="latest_top_wr">
-      {{ render_latest_posts(request, 'main_list', 'notice', 4, 23)|safe }}
+<div class="sp-dash-root">
+  <section class="sp-q-hero" aria-label="Quantum hero">
+    <p class="sp-q-kicker">{{ hero_section.kicker }}</p>
+    <h1 class="sp-q-title">{{ hero_section.title }}</h1>
+    <div class="sp-q-sub">{{ hero_section.subtitle|safe }}</div>
+    <div class="sp-q-actions">
+      <a class="sp-q-btn" href="{{ hero_section.button_1_link or '/game_lobby' }}">{{ hero_section.button_1_text }}</a>
+      <a class="sp-q-btn sp-q-btn--ghost" href="{{ hero_section.button_2_link or '/bbs/search' }}">{{ hero_section.button_2_text }}</a>
     </div>
-    <div class="latest_wr">
-        {{ render_latest_posts(request, 'pic_list', 'free', 4, 23)|safe }}
-        {{ render_latest_posts(request, 'pic_list', 'qa', 4, 23)|safe }}
-        {{ render_latest_posts(request, 'pic_list', 'notice', 4, 23)|safe }}
+    <div class="sp-q-chips">
+      <span class="sp-q-chip">{{ hero_section.node_status }}</span>
+      <span class="sp-q-chip">{{ hero_section.uptime_text }}</span>
+      <span class="sp-q-chip">{{ hero_section.realtime_text }}</span>
+      <span class="sp-q-chip">{{ hero_section.community_text }}</span>
     </div>
-    <div class="latest_wr">
-        {{ render_latest_posts(request, 'pic_block', 'gallery', 4, 23)|safe }}
+    <div class="sp-q-metrics">
+      <span>Latency: <strong id="sp-m-latency">—</strong></span>
+      <span>Signal Quality: <strong>94.2%</strong></span>
+      <span>Live Threads: <strong id="sp-m-threads">7</strong></span>
+      <span>Watcher: <strong style="color:#4ade80">ONLINE</strong></span>
     </div>
-    <div class="latest_wr">
-        {% for board in boards %}
-        <div style="float:left; {{ loop.cycle("", "margin-left:2%", "margin-left:2%") }}" class="lt_wr">
-            {{ render_latest_posts(request, 'basic', board.bo_table, 6, 24)|safe }}
+  </section>
+
+  <div class="sp-dash-row">
+    <div class="sp-dash-main">
+      <div class="sp-dash-two">
+        <div class="sp-q-card" id="sp-card-signal">
+          <h3>01 {{ hero_section.card_01_title }}</h3>
+          <p style="font-size:11px;color:#64748b;margin:0 0 8px;">{{ hero_section.card_01_desc }}</p>
+          <ul class="sp-q-list" id="sp-signal-list"><li>API 연결 중…</li></ul>
         </div>
-        {% endfor %}
+        <div class="sp-q-card" id="sp-card-exec">
+          <h3>02 {{ hero_section.card_02_title }}</h3>
+          <p style="font-size:11px;color:#64748b;margin:0 0 8px;">{{ hero_section.card_02_desc }}</p>
+          <ul class="sp-q-list" id="sp-exec-list"><li>API 연결 중…</li></ul>
+        </div>
+      </div>
+      <div class="sp-q-card sp-q-wide" id="sp-card-intel">
+        <h3>03 {{ hero_section.card_03_title }}</h3>
+        <p class="sp-intel-meta" id="sp-intel-status" style="font-size:11px;color:#64748b;margin:0 0 10px;">{{ hero_section.card_03_desc }}</p>
+        <div class="sp-q-intel-cards" id="sp-intel-grid"></div>
+      </div>
+      <pre class="sp-q-terminal" id="sp-terminal">{{ hero_section.terminal_logs }}</pre>
     </div>
+    <aside class="sp-dash-aside">
+      <div style="text-align:center;padding:10px 6px 14px;border-bottom:1px solid rgba(34,211,238,0.15);">
+        <div style="font-size:11px;color:#7dd3fc;letter-spacing:0.12em;">SLOTPASS AI</div>
+        <div style="font-size:10px;color:#64748b;">PREMIER GLOBAL SOLUTION</div>
+      </div>
+      {% if request.state.login_member %}
+        {% include "/bbs/outlogin_after.html" %}
+      {% else %}
+        {% include "/bbs/outlogin_before.html" %}
+      {% endif %}
+      <div id="sp-coinness-box">
+        <h4>LIVE MARKET BOARD</h4>
+        <div id="sp-coinness-coins">불러오는 중…</div>
+        <h4>CASINO LIVE</h4>
+        <div id="sp-sidebar-casino">—</div>
+        <h4>SLOTPASS MARKET PULSE</h4>
+        <div id="sp-sidebar-pulse">—</div>
+        <h4>SLOTPASS TOP COINS</h4>
+        <div id="sp-sidebar-topcoins">—</div>
+        <h4>SLOTPASS HOT RANKS</h4>
+        <div id="sp-coinness-hot">—</div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="sp-portal-grid" aria-label="주요 게시판 바로가기">
+    {% for card in portal_cards %}
+    <article class="sp-portal-card">
+      <div class="sp-portal-card-head">
+        <span class="sp-portal-tag">{{ card.tag_ko }}</span>
+        <a class="sp-portal-more" href="{{ card.more_url or '#' }}">더보기</a>
+      </div>
+      <h3 class="sp-portal-title"><span class="sp-portal-ico" aria-hidden="true">{{ card.icon }}</span> {{ card.title_en }}</h3>
+      <p class="sp-portal-desc">{{ card.desc }}</p>
+      <a class="sp-portal-go" href="{{ card.go_url or '#' }}">바로가기</a>
+    </article>
+    {% endfor %}
+  </section>
+
+</div>
+
+<script>
+(function() {
+  var t0 = performance.now();
+  function esc(s) {
+    if (!s) return "";
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  function intelTagClass(typ) {
+    var t = (typ || "MARKET").toUpperCase();
+    if (t === "LIVE") return "sp-tag-pill sp-tag-live";
+    if (t === "CASINO") return "sp-tag-pill sp-tag-casino";
+    if (t === "WHALE") return "sp-tag-pill sp-tag-whale";
+    if (t === "MARKET") return "sp-tag-pill sp-tag-market";
+    return "sp-tag-pill sp-tag-default";
+  }
+  function fillSignal(items) {
+    var ul = document.getElementById("sp-signal-list");
+    if (!ul) return;
+    ul.innerHTML = "";
+    if (!items || !items.length) {
+      ul.innerHTML = "<li>표시할 시그널이 없습니다.</li>";
+      return;
+    }
+    items.slice(0, 8).forEach(function(row) {
+      var li = document.createElement("li");
+      var b = row.board_subject || row.board || "";
+      li.innerHTML = '<span class="tag tag-post">POST</span><span class="sp-sig-board">[' + esc(b) + "]</span> " +
+        '<a href="' + esc(row.href || "#") + '">' + esc(row.title || "") + "</a>";
+      ul.appendChild(li);
+    });
+  }
+  function fillExec(items) {
+    var ul = document.getElementById("sp-exec-list");
+    if (!ul) return;
+    ul.innerHTML = "";
+    if (!items || !items.length) {
+      ul.innerHTML = "<li>표시할 알림이 없습니다.</li>";
+      return;
+    }
+    items.slice(0, 6).forEach(function(row) {
+      var li = document.createElement("li");
+      var lab = (row.priority_label || "INFO").toUpperCase();
+      var cls = lab.indexOf("CRIT") >= 0 ? "tag-crit" : (lab.indexOf("HIGH") >= 0 ? "tag-crit" : "tag-med");
+      li.innerHTML = '<span class="tag ' + cls + '">' + esc(lab) + "</span> " + esc(row.title || "");
+      ul.appendChild(li);
+    });
+  }
+  function fillIntel(items, updatedAt) {
+    var grid = document.getElementById("sp-intel-grid");
+    var st = document.getElementById("sp-intel-status");
+    if (!grid) return;
+    grid.innerHTML = "";
+    var n = items ? items.length : 0;
+    if (st) {
+      var ago = updatedAt ? new Date(updatedAt).toLocaleString("ko-KR", { hour12: false }) : "—";
+      st.textContent = "실시간 감시 중 · 총 피드 " + n + "건 · 마지막 동기화 " + ago;
+    }
+    if (!items || !items.length) {
+      grid.innerHTML = "<div class=\"sp-q-intel-card\" style=\"grid-column:1/-1;\"><p class=\"sp-ic-sum\">피드가 비어 있습니다.</p></div>";
+      return;
+    }
+    items.slice(0, 6).forEach(function(row) {
+      var d = document.createElement("div");
+      d.className = "sp-q-intel-card";
+      var typ = (row.type || "MARKET").toUpperCase();
+      var tagHtml = '<span class="' + intelTagClass(typ) + '">[' + esc(typ) + "]</span>";
+      d.innerHTML =
+        '<div class="sp-ic-head"><div>' + tagHtml + '</div><div class="sp-ic-time">' + esc(row.display_time || "") + "</div></div>" +
+        '<div class="sp-ic-title">' + esc(row.title || "") + "</div>" +
+        '<p class="sp-ic-sum">' + esc(row.summary || "") + "</p>";
+      grid.appendChild(d);
+    });
+  }
+  function fillCasinoFromIntel(items) {
+    var el = document.getElementById("sp-sidebar-casino");
+    if (!el || !items) return;
+    var lines = items.filter(function(x) {
+      var t = (x.type || "").toUpperCase();
+      return t === "CASINO" || t === "LIVE";
+    }).slice(0, 6);
+    if (!lines.length) {
+      el.textContent = "라이브 시그널 대기 중";
+      return;
+    }
+    el.innerHTML = lines.map(function(row) {
+      return '<div class="casino-line">' + esc(row.title || row.summary || "") + "</div>";
+    }).join("");
+  }
+  function fillCoinness(data) {
+    var coins = document.getElementById("sp-coinness-coins");
+    var hot = document.getElementById("sp-coinness-hot");
+    var pulse = document.getElementById("sp-sidebar-pulse");
+    var topc = document.getElementById("sp-sidebar-topcoins");
+    if (!data) return;
+    if (data.status === "degraded" && (!data.coins || !data.coins.length)) {
+      if (coins) coins.textContent = "마켓 데이터 일시 불가";
+      if (hot) hot.textContent = "—";
+      if (pulse) pulse.textContent = "—";
+      if (topc) topc.textContent = "—";
+      return;
+    }
+    var list = data.coins || [];
+    if (coins) {
+      var h = "";
+      list.slice(0, 10).forEach(function(c) {
+        var pr = c.price != null ? c.price : "";
+        h += '<div class="coin-row"><span class="coin-sym">' + esc(c.symbol || "") + '</span><span><span class="coin-price">' + esc(String(pr)) + "</span> <span>" + esc(c.change_rate || "") + "</span></span></div>";
+      });
+      coins.innerHTML = h || "—";
+    }
+    if (topc) {
+      var th = "";
+      list.slice(0, 5).forEach(function(c, i) {
+        th += '<div class="coin-row"><span class="coin-sym">' + (i + 1) + ". " + esc(c.symbol || "") + '</span><span class="coin-price">' + esc(String(c.price || "")) + " · " + esc(c.change_rate || "") + "</span></div>";
+      });
+      topc.innerHTML = th || "—";
+    }
+    if (pulse) {
+      var tp = data.tickerPulse;
+      var fp = data.futuresPulse;
+      var ph = "";
+      if (tp && (tp.bull != null || tp.bear != null)) {
+        ph += '<div class="pulse-row"><span>24H 상승·하락</span><span>' + esc(String(tp.bull)) + " / " + esc(String(tp.bear)) + "</span></div>";
+      }
+      if (fp) {
+        if (fp.liquidationCount24h != null) {
+          ph += '<div class="pulse-row"><span>청산(24h)</span><span>' + esc(String(fp.liquidationCount24h)) + "건</span></div>";
+        }
+        if (fp.liqLongRate24h != null && fp.liqShortRate24h != null) {
+          ph += '<div class="pulse-row"><span>롱·숏 비율</span><span>' + esc(String(fp.liqLongRate24h)) + "% / " + esc(String(fp.liqShortRate24h)) + "%</span></div>";
+        }
+      }
+      pulse.innerHTML = ph || "지표 수집 중";
+    }
+    if (hot) {
+      var hr = data.hotRanks || [];
+      hot.innerHTML = hr.length ? "<ol style='margin:0;padding-left:18px;color:#cbd5e1'>" + hr.slice(0, 10).map(function(x) {
+        return "<li>" + esc(x) + "</li>";
+      }).join("") + "</ol>" : "—";
+    }
+  }
+  fetch("/api/v1/dashboard/signal-engine", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { fillSignal(d.items); })
+    .catch(function() {
+      var ul = document.getElementById("sp-signal-list");
+      if (ul) ul.innerHTML = "<li>시그널을 불러오지 못했습니다.</li>";
+    });
+  fetch("/api/v1/dashboard/execution-layer", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { fillExec(d.items); })
+    .catch(function() {
+      var ul = document.getElementById("sp-exec-list");
+      if (ul) ul.innerHTML = "<li>실행 레이어를 불러오지 못했습니다.</li>";
+    });
+  fetch("/api/v1/intelligence/feed", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      fillIntel(d.items, d.updatedAt);
+      fillCasinoFromIntel(d.items || []);
+    })
+    .catch(function() {
+      var grid = document.getElementById("sp-intel-grid");
+      var st = document.getElementById("sp-intel-status");
+      if (st) st.textContent = "인텔리전스 피드 로드 실패";
+      if (grid) grid.innerHTML = "<div class=\"sp-q-intel-card\" style=\"grid-column:1/-1;\"><p class=\"sp-ic-sum\">불러오지 못했습니다.</p></div>";
+    });
+  fetch("/api/v1/dashboard/coinness-sidebar", { credentials: "same-origin" })
+    .then(function(r) { return r.json(); })
+    .then(fillCoinness)
+    .catch(function() {
+      var el = document.getElementById("sp-coinness-coins");
+      if (el) el.textContent = "사이드바 로드 실패";
+    });
+  var ms = Math.round(performance.now() - t0);
+  var lat = document.getElementById("sp-m-latency");
+  if (lat) lat.textContent = ms + "ms";
+})();
+</script>
 {% endblock content %}

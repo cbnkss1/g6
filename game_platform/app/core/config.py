@@ -126,10 +126,27 @@ class Settings(BaseSettings):
         description="모의 배당 갱신 주기(초)",
     )
 
-    # Plxmed 카지노 API
-    PLXMED_CLIENT_ID: str = "410"
-    PLXMED_SECURITY_KEY: str = ""
-    PLXMED_API_BASE: str = "https://api.plxmed.com"
+    # Plxmed 카지노 API (에이전트 패널 https://bpcl.plxmed.com — 시크릿·문서·해시 토큰 테스트)
+    PLXMED_CLIENT_ID: str = Field(
+        default="410",
+        description="에이전트 client_id (패널·API 문서와 동일)",
+    )
+    PLXMED_SECURITY_KEY: str = Field(
+        default="",
+        description="에이전트 시크릿 키(패널 «해시 키 생성» /generateAuthToken 에 표시)",
+    )
+    PLXMED_API_BASE: str = Field(
+        default="https://bp.plxmed.com/api/v1/plexApi",
+        description="Plex API 베이스 URL(끝 슬래시 없음). 경로는 /createaccount 등 plxmed_client 와 동일",
+    )
+    PLXMED_TRANSFER_DEMO_MODE: bool = Field(
+        default=False,
+        description="True면 전환 시 Plxmed 호출 없이 원장만 기록(카지노 지갑과 불일치·배팅 불가)",
+    )
+    PLXMED_LEDGER_ONLY_TRANSFERS: bool = Field(
+        default=False,
+        description="True면 Plxmed 없이 원장만 — TRANSFER_DEMO_MODE 와 동일 목적, 별도 스위치",
+    )
 
     # (선택) 외부 그누보드 회원 검증 브릿지 — 기본 끔. 플레이어 로그인은 gp_users 전용 권장.
     PLAYER_LOGIN_V6_ENABLED: bool = Field(default=False, description="True일 때만 POST /api/player/login/v6")

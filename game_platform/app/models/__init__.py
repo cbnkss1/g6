@@ -9,6 +9,7 @@ from app.models.site_config import SiteConfig
 from app.models.sports import SportsBet, SportsMatch, SportsOdds, SportsSlip, SportsTx
 from app.models.player_notification import PlayerNotification
 from app.models.powerball import PowerballBet, PowerballGameState, PowerballRound
+from app.models.home_hero_slide import HomeHeroSlide
 from app.models.site_popup import SitePopup
 from app.models.user import User, UserGameRollingRate
 
@@ -34,4 +35,5 @@ __all__ = [
     "PowerballBet",
     "PlayerNotification",
     "SitePopup",
+    "HomeHeroSlide",
 ]

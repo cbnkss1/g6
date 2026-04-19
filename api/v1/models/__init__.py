@@ -55,3 +55,4 @@ class Tags(Enum):
     AJAX_AUTOSAVE = "자동저장"
     AJAX_GOOD = "좋아요/싫어요"
     VISIT = "방문자"
+    CASINO = "카지노"

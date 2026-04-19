@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { motion } from "framer-motion";
 
 import { formatPlayerMoney } from "@/lib/formatPlayerMoney";
 import { usePlayerAuth } from "@/lib/playerAuthContext";
@@ -14,6 +15,9 @@ export function SiteHeader() {
 
   const extLink =
     "rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-400 hover:border-quantum-cyan/35 hover:text-quantum-cyan sm:text-sm";
+
+  const gmStr = user ? formatPlayerMoney(user.game_money_balance) : "—";
+  const rpStr = user ? formatPlayerMoney(user.rolling_point_balance) : "—";
 
   return (
     <header className="sticky top-0 z-20 border-b border-quantum-cyan/15 bg-[#060b14]/92 backdrop-blur-md shadow-[0_0_32px_rgba(34,211,238,0.06)]">
@@ -66,13 +70,49 @@ export function SiteHeader() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           {hydrated && user ? (
             <>
-              <div className="flex min-w-0 max-w-[min(52vw,14rem)] flex-col items-end gap-0.5 text-right sm:max-w-none md:flex-row md:items-baseline md:gap-2">
-                <span className="font-mono text-[11px] tabular-nums text-quantum-cyan/90 sm:text-xs">
-                  보유 {formatPlayerMoney(user.game_money_balance)}원
-                </span>
-                <span className="font-mono text-[10px] tabular-nums text-slate-500">
-                  롤링P {formatPlayerMoney(user.rolling_point_balance)}P
-                </span>
+              <div className="flex min-w-0 max-w-[min(90vw,22rem)] flex-wrap items-center justify-end gap-1.5 sm:max-w-none sm:gap-2">
+                <div className="relative overflow-hidden rounded-xl border border-cyan-400/25 bg-gradient-to-br from-cyan-500/[0.12] via-slate-900/40 to-slate-950/80 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_0_20px_rgba(34,211,238,0.08)] sm:px-3 sm:py-2">
+                  <div
+                    className="pointer-events-none absolute -right-4 -top-4 h-14 w-14 rounded-full bg-cyan-400/15 blur-2xl"
+                    aria-hidden
+                  />
+                  <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-cyan-300/75 sm:text-[9px]">
+                    보유 머니
+                  </p>
+                  <div className="mt-0.5 flex items-baseline gap-0.5">
+                    <motion.span
+                      key={gmStr}
+                      className="font-mono text-sm font-semibold tabular-nums tracking-tight text-cyan-100 drop-shadow-[0_0_12px_rgba(34,211,238,0.35)] sm:text-base"
+                      initial={{ opacity: 0.65, y: 3 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                    >
+                      {gmStr}
+                    </motion.span>
+                    <span className="text-[10px] font-medium text-cyan-200/50">원</span>
+                  </div>
+                </div>
+                <div className="relative overflow-hidden rounded-xl border border-amber-400/20 bg-gradient-to-br from-amber-500/[0.08] via-slate-900/35 to-slate-950/80 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_0_18px_rgba(251,191,36,0.06)] sm:px-3 sm:py-2">
+                  <div
+                    className="pointer-events-none absolute -right-3 -top-3 h-12 w-12 rounded-full bg-amber-400/10 blur-2xl"
+                    aria-hidden
+                  />
+                  <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-amber-200/70 sm:text-[9px]">
+                    롤링 포인트
+                  </p>
+                  <div className="mt-0.5 flex items-baseline gap-0.5">
+                    <motion.span
+                      key={rpStr}
+                      className="font-mono text-sm font-semibold tabular-nums tracking-tight text-amber-100/95 drop-shadow-[0_0_10px_rgba(251,191,36,0.2)] sm:text-base"
+                      initial={{ opacity: 0.65, y: 3 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                    >
+                      {rpStr}
+                    </motion.span>
+                    <span className="text-[10px] font-medium text-amber-200/45">P</span>
+                  </div>
+                </div>
               </div>
               <span className="hidden max-w-[120px] truncate text-sm text-slate-400 sm:inline md:max-w-[160px]">
                 {user.display_name || user.login_id}

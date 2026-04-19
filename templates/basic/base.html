@@ -1,235 +1,1029 @@
-{% extends "base_sub.html" %}
+<!DOCTYPE html>
+<html lang="ko" color-theme="light">
+<head>
+    {% set canonical_url = (((request.base_url|string).rstrip('/')) ~ (request.url.path if request else '/')) if request else '' %}
+    {% set default_og_image = (((request.base_url|string).rstrip('/')) ~ '/static/img/slotpass_logo.png') if request else '/static/img/slotpass_logo.png' %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}슬롯패스 - 공식 홈페이지{% endblock %}{% block title_suffix %} | 슬롯패스{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}슬롯패스 - 슬롯·카지노 정보, 무료체험, 포인트게임, 커뮤니티{% endblock %}">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="{{ canonical_url }}">
+    <!-- Open Graph / SNS 공유 -->
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:site_name" content="슬롯패스">
+    <meta property="og:title" content="{% block og_title %}SLOTPASS - 슬롯패스{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}슬롯패스 - 슬롯·카지노 정보, 무료체험, 포인트게임, 커뮤니티{% endblock %}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:image" content="{{ default_og_image }}">
+    <meta property="og:locale" content="ko_KR">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ self.og_title()|striptags|trim }}">
+    <meta name="twitter:description" content="{{ self.og_description()|striptags|trim }}">
+    <meta name="twitter:image" content="{{ default_og_image }}">
+    <meta name="google-site-verification" content="Ly7a47S9K6_2gm8YtR_mbEHNVCV1drie9mq-xzZsCks" />
+    <!-- 사이트 이름(슬롯패스) 구조화 데이터 - 구글 검색 결과용 -->
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"WebSite","name":"슬롯패스","alternateName":"SLOTPASS","url":"{{ (request.base_url|string or 'https://slotpass.net/').rstrip('/') }}/","description":"슬롯·카지노 정보, 무료체험, 포인트게임, 커뮤니티"}
+    </script>
+    {% block meta_extra %}{% endblock %}
+    {# 그누보드 메인 슬라이더(main_list)·최신글 블록에 필요 (base_sub.html 에 있던 로드) #}
+    <script src="/static/js/jquery.min.js?ver=3.7.1"></script>
+    <script src="/static/js/jquery-migrate.min.js?ver=3.4.0"></script>
+    <script src="/static/js/common.js?ver=1.0.0"></script>
+    <script src="/static/js/wrest.js?ver=1.0.0"></script>
+    <link rel="stylesheet" href="{{ theme_asset(request, 'js/slick/slick.css?ver=1.8.1') }}">
+    <script src="{{ theme_asset(request, 'js/slick/slick.min.js?ver=1.8.1') }}"></script>
+    <link rel="stylesheet" href="/static/js/font-awesome/css/all.min.css?ver=6.5.1">
+    <script src="/static/js/font-awesome/js/all.min.js?ver=6.5.1"></script>
+    <script>
+    const g6_url       = "{{ request.base_url }}";
+    const g6_bbs_url   = "{{ request.base_url }}bbs";
+    const g6_is_member = "{{ 1 if request.state.login_member else '' }}";
+    const g6_is_mobile = "{{ 1 if request.state.is_mobile else '' }}";
+    const g6_editor    = "{{ request.state.editor }}";
+    const g6_cookie_domain = "{{ request.state.cookie_domain }}";
+    const g6_shop_url = "{{ request.base_url }}shop";
+    </script>
+    <link rel="stylesheet" href="/static/css/global-reset.css?ver=1.0">
+    <link rel="stylesheet" href="{{ theme_asset(request, 'css/default.css') }}?ver=1.1">
+    <link rel="stylesheet" href="/static/css/spring-theme.css?ver=1.1">
+    <style>
+        /* 슬롯패스 명품 테마: 화이트톤 + 오렌지/골드 포인트 */
+        :root {
+            --sp-width: 1240px;
+            --sp-orange: #e85d04;
+            --sp-gold: #d4a853;
+            --sp-gold-light: #f0d78c;
+            --sp-white: #ffffff;
+            --sp-bg: #faf9f7;
+            --sp-border: #efe9e0;
+            --sp-text: #2c2c2c;
+            --sp-text-muted: #6b6b6b;
+        }
+        body { margin: 0; padding: 0; background: var(--sp-bg); font-family: 'Malgun Gothic', dotum, sans-serif; color: var(--sp-text); }
+        header.header, aside.sidebar, .left-sidebar, #aside { display: none !important; }
 
-{% block body_html %}
-<div id="hd">
+        .sp-header {
+            background: linear-gradient(180deg, #090f1f 0%, #0a1327 100%);
+            border-bottom: 1px solid rgba(34, 211, 238, 0.28);
+            box-shadow: 0 0 26px rgba(34, 211, 238, 0.12);
+        }
+        .sp-header-inner {
+            width: var(--sp-width);
+            max-width: 100%;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 12px;
+            padding: 12px clamp(12px, 3vw, 32px);
+            box-sizing: border-box;
+        }
+        .sp-logo {
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            flex-shrink: 0;
+            min-width: 0;
+            padding: 4px 2px;
+        }
+        .sp-logo img { display: none !important; }
+        .sp-logo::after {
+            content: "SLOTPASS";
+            display: inline-block;
+            font-size: clamp(22px, 2.7vw, 34px);
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            color: #bdf7ff;
+            text-shadow:
+                0 0 8px rgba(34, 211, 238, 0.8),
+                0 0 22px rgba(34, 211, 238, 0.45),
+                0 0 36px rgba(138, 235, 255, 0.35);
+            white-space: nowrap;
+        }
+        #spring-theme-toggle { display: none !important; }
+        /* 상단: 로고 바로 옆 ~ 테마 토글 직전까지 가로로 최대 확장 (static/img/ma1.jpg) */
+        .sp-header-banner { display: none !important; }
+        .sp-header-banner-img { display: none !important; }
 
-    <h1 id="hd_h1"></h1>
-    <div id="skip_to_container"><a href="#container">본문 바로가기</a></div>
+        /* 메뉴바: 본문·사이드바 너비에 맞춰 양쪽 잘림 + 은은한 색 전환 */
+        .sp-nav-wrap {
+            width: var(--sp-width);
+            max-width: 100%;
+            margin: 0 auto;
+        }
+        .sp-nav {
+            height: 52px;
+            overflow: hidden;
+            background: linear-gradient(90deg, rgba(7,14,30,0.96), rgba(10,24,44,0.96));
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            outline: none;
+            border-radius: 12px;
+            box-shadow: 0 0 18px rgba(34, 211, 238, 0.18), inset 0 0 12px rgba(138, 235, 255, 0.08);
+            animation: none;
+        }
+        @keyframes sp-nav-bg {
+            0% { background: linear-gradient(90deg, #e63946, #f4a261, #e9c46a); }
+            20% { background: linear-gradient(90deg, #2a9d8f, #264653, #2a9d8f); }
+            40% { background: linear-gradient(90deg, #457b9d, #1d3557, #457b9d); }
+            60% { background: linear-gradient(90deg, #7b2cbf, #9d4edd, #c77dff); }
+            80% { background: linear-gradient(90deg, #e63946, #f4a261, #e9c46a); }
+            100% { background: linear-gradient(90deg, #e63946, #f4a261, #e9c46a); }
+        }
+        .sp-nav-inner {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            list-style: none;
+            padding: 0;
+        }
+        .sp-nav-inner li { flex-shrink: 0; }
+        .sp-nav-inner li a {
+            display: flex;
+            align-items: center;
+            height: 52px;
+            padding: 0 18px;
+            color: #d6f6ff;
+            font-weight: 600;
+            text-decoration: none;
+            font-size: 14px;
+            white-space: nowrap;
+            border-right: 1px solid rgba(34, 211, 238, 0.16);
+            transition: background 0.2s, color 0.2s, text-shadow 0.2s;
+        }
+        .sp-nav-inner li a:hover {
+            background: rgba(34, 211, 238, 0.12);
+            color: #f1fdff;
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.55);
+        }
+        .sp-nav-inner li a:focus { outline: none; }
+        .sp-nav-inner li a:focus-visible {
+            outline: none;
+            box-shadow: inset 0 -2px 0 rgba(34, 211, 238, 0.45);
+        }
 
-    {% include "/bbs/newwin.inc.html" ignore missing %}
+        /* 모바일: 햄버거 + 세로 메뉴 (짤림 방지) */
+        .sp-nav-toggle {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            margin: 0 0 0 auto;
+            padding: 0;
+            background: rgba(0,0,0,0.2);
+            border: none;
+            color: var(--sp-white);
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .sp-nav-toggle:hover { background: rgba(255,255,255,0.2); }
+        @media (max-width: 768px) {
+            .sp-header-inner { padding: 10px 12px; flex-wrap: nowrap; gap: 8px; align-items: center; }
+            .sp-logo::after { font-size: 24px; }
+            .sp-header-banner { flex: 1 1 0; min-width: 0; }
+            .sp-header-banner-img { max-height: min(52px, 14vh); object-position: left center; }
+            .sp-nav-wrap { padding: 0 0 0; }
+            .sp-nav { height: auto; min-height: 52px; overflow: visible; }
+            .sp-nav-toggle { display: flex; }
+            .sp-nav-inner {
+                display: none;
+                flex-direction: column;
+                width: 100%;
+                height: auto;
+                padding: 0;
+            }
+            .sp-nav-open .sp-nav-inner { display: flex; }
+            .sp-nav-inner li { width: 100%; flex-shrink: 0; }
+            .sp-nav-inner li a {
+                width: 100%;
+                height: 52px;
+                padding: 0 20px;
+                box-sizing: border-box;
+                justify-content: flex-start;
+            }
+            /* 모바일: 본문·자유게시판·동영상·이미지 화면에 맞게 줄이기 */
+            .sp-content-wrap { padding: 16px 12px 24px; box-sizing: border-box; overflow-x: hidden; }
+            .sp-content-wrap img,
+            .sp-content-wrap video,
+            .sp-content-wrap iframe,
+            .sp-content-wrap embed,
+            .sp-content-wrap object { max-width: 100% !important; height: auto !important; }
+            .sp-content-wrap video { display: block; }
+            .sp-content-wrap iframe { max-height: 60vh; }
+            #article_contents,
+            #bo_v_con,
+            .bo_v_con,
+            .view_content,
+            .freeslot_view_contents {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            #article_contents img,
+            #article_contents video,
+            #bo_v_con img,
+            #bo_v_con video,
+            .bo_v_con img,
+            .bo_v_con video,
+            .view_content img,
+            .view_content video,
+            .freeslot_view_contents img,
+            .freeslot_view_contents video {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+            #article_contents iframe,
+            #bo_v_con iframe,
+            .bo_v_con iframe,
+            .view_content iframe,
+            .freeslot_view_contents iframe {
+                max-width: 100% !important;
+                max-height: 50vh !important;
+            }
+            /* 게시판 목록·본문 테이블 가로 스크롤 */
+            .bo_list_layout table,
+            .bo_view table,
+            #article_contents table {
+                max-width: 100%;
+            }
+            .bo_list_layout,
+            .bo_view { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        }
 
-    {% set current_login_count=request.state.template_data.current_login_count %}
-    <div id="tnb">
-        <div class="inner">
-            <ul id="hd_qnb">
-                <li><a href="{{ url_for('faq_view') }}">FAQ</a></li>
-                <li><a href="{{ url_for('qa_list') }}">Q&A</a></li>
-                <li><a href="/bbs/new">새글</a></li>
-                <li>
-                    <a href="/bbs/current_connect" class="visit">
-                        접속자
-                        <strong class="visit-num">{{ current_login_count|number_format }}</strong>
-                    </a>
-                </li>
-            </ul>
+        .sp-content-wrap { width: var(--sp-width); max-width: 100%; margin: 0 auto; padding: 24px 0; }
+
+        /* ===== PASS-AI Enterprise Global Override ===== */
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700;800&display=swap');
+        :root {
+            --pa-black-0: #000000;
+            --pa-black-1: #020617; /* Cyber Obsidian Grid Forum base */
+            --pa-gold: #FFD700;
+            --pa-emerald: #50C878;
+            --pa-blue: #40C4FF;
+            --pa-text: #EDEDED;
+        }
+        html, body {
+            background: var(--pa-black-1) !important;
+            color: var(--pa-text) !important;
+            background-image:
+                linear-gradient(to right, rgba(64,196,255,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(64,196,255,0.05) 1px, transparent 1px);
+            background-size: 64px 64px;
+            background-position: center;
+            font-family: "Space Grotesk", "Inter", "Oswald", "Malgun Gothic", sans-serif !important;
+        }
+        .sp-logo::after {
+            content: "SLOTPASS AI" !important;
+            background: linear-gradient(90deg, #FFD700 0%, #fff0a8 45%, #FFD700 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent !important;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.2), 0 0 24px rgba(255, 215, 0, 0.16);
+            font-family: "Inter", "Oswald", "Malgun Gothic", sans-serif;
+        }
+        .sp-nav {
+            background: linear-gradient(90deg, #020202, #0a0a0a) !important;
+            border: 1px solid rgba(80, 200, 120, 0.45) !important;
+            box-shadow: 0 0 18px rgba(80, 200, 120, 0.14), inset 0 0 10px rgba(80, 200, 120, 0.08) !important;
+        }
+        .sp-nav-inner li a { color: #EDEDED !important; }
+        .sp-nav-inner li a:hover {
+            color: #FFD700 !important;
+            background: rgba(255, 215, 0, 0.1) !important;
+            text-shadow: 0 0 12px rgba(255, 215, 0, 0.35);
+        }
+        .sp-content-wrap a { color: var(--pa-blue); }
+        .sp-content-wrap a:hover { color: #84dbff; }
+        .sp-content-wrap h1,
+        .sp-content-wrap h2,
+        .sp-content-wrap h3,
+        .sp-content-wrap .sb-section-title,
+        .sp-content-wrap #view_subject,
+        .sp-content-wrap .item_subject,
+        .sp-content-wrap .table_subject a {
+            color: var(--pa-gold) !important;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
+        }
+        .sp-content-wrap .table_writer,
+        .sp-content-wrap .table_datetime,
+        .sp-content-wrap .item_footer,
+        .sp-content-wrap .item_info,
+        .sp-content-wrap .item_writer,
+        .sp-content-wrap .freeslot_card_sub {
+            color: var(--pa-blue) !important;
+        }
+
+        /* Hard force dark across all board skins/pages */
+        .bo_common,
+        .bo_list_layout,
+        .bo_main,
+        .bo_list,
+        .bo_view,
+        .bo_write,
+        .list_table,
+        .list_table tr,
+        .list_table td,
+        .list_table th,
+        .bo_comment,
+        .bo_comment .comment,
+        .bo_comment_write,
+        .write_subject,
+        .write_content_wrap,
+        .write_option,
+        .write_select,
+        .write_writer,
+        .write_link,
+        .write_file,
+        #bo_basic_view,
+        #bo_gallery_view,
+        #bo_freeslot_view,
+        #article_share,
+        #article_react,
+        #view_header,
+        #view_article {
+            background-color: #020617 !important;
+            color: #EDEDED !important;
+            border-color: rgba(64,196,255,0.2) !important;
+        }
+        #article_contents,
+        #article_contents p,
+        #article_contents div,
+        #article_contents span,
+        #article_contents li,
+        #article_contents ul,
+        #article_contents ol,
+        #article_contents h1,
+        #article_contents h2,
+        #article_contents h3,
+        #article_contents h4,
+        #article_contents h5,
+        #article_contents h6,
+        #article_contents table,
+        #article_contents tbody,
+        #article_contents thead,
+        #article_contents tfoot,
+        #article_contents tr,
+        #article_contents td,
+        #article_contents th,
+        #freeslot_article_contents,
+        #freeslot_article_contents p,
+        #freeslot_article_contents div,
+        #freeslot_article_contents span,
+        #freeslot_article_contents li,
+        #freeslot_article_contents ul,
+        #freeslot_article_contents ol {
+            background-color: transparent !important;
+            color: #EDEDED !important;
+            border-color: rgba(64,196,255,0.2) !important;
+        }
+        #article_contents a,
+        #freeslot_article_contents a { color: #40C4FF !important; }
+        /* Readability upgrade: normalize mixed legacy inline colors */
+        #article_contents,
+        #freeslot_article_contents {
+            font-size: 16px;
+            line-height: 1.8;
+            letter-spacing: 0.01em;
+            word-break: break-word;
+        }
+        #article_contents *,
+        #freeslot_article_contents * {
+            color: #EDEDED !important;
+            background-color: transparent !important;
+            text-shadow: none !important;
+            opacity: 1 !important;
+            filter: none !important;
+            border-color: rgba(64,196,255,0.2) !important;
+        }
+        #article_contents [style*="color"],
+        #article_contents [style*="background"],
+        #freeslot_article_contents [style*="color"],
+        #freeslot_article_contents [style*="background"] {
+            color: #EDEDED !important;
+            background: transparent !important;
+        }
+        #article_contents mark,
+        #freeslot_article_contents mark {
+            background: rgba(64,196,255,0.20) !important;
+            color: #f8fcff !important;
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+        #article_contents h1, #article_contents h2, #article_contents h3,
+        #article_contents h4, #article_contents h5, #article_contents h6,
+        #freeslot_article_contents h1, #freeslot_article_contents h2, #freeslot_article_contents h3,
+        #freeslot_article_contents h4, #freeslot_article_contents h5, #freeslot_article_contents h6 {
+            color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+        #article_contents strong, #article_contents b,
+        #freeslot_article_contents strong, #freeslot_article_contents b {
+            color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+        #article_contents blockquote,
+        #freeslot_article_contents blockquote {
+            border-left: 3px solid rgba(64,196,255,0.5) !important;
+            background: rgba(15,23,42,0.45) !important;
+            color: #dbeafe !important;
+            margin: 12px 0 !important;
+            padding: 10px 12px !important;
+            border-radius: 8px !important;
+        }
+        .frm_input,
+        textarea,
+        select,
+        input[type="text"],
+        input[type="password"],
+        input[type="email"] {
+            background: rgba(15,23,42,0.75) !important;
+            color: #EDEDED !important;
+            border-color: rgba(64,196,255,0.25) !important;
+        }
+
+        /* List view: hide raw thumbnails and replace with artifact frame */
+        .list_thumb,
+        .item_img img,
+        .freeslot_card_img img {
+            display: none !important;
+        }
+        .table_subject .list_thumb::before,
+        .item_img::before,
+        .freeslot_card_img::before {
+            content: "DIGITAL ARTIFACT";
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 96px;
+            height: 42px;
+            border-radius: 12px;
+            border: 1px solid rgba(80, 200, 120, 0.75);
+            color: #EDEDED;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            background:
+                linear-gradient(160deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03)),
+                repeating-linear-gradient(45deg, rgba(80,200,120,0.06), rgba(80,200,120,0.06) 6px, rgba(64,196,255,0.04) 6px, rgba(64,196,255,0.04) 12px),
+                linear-gradient(180deg, rgba(0,0,0,0.72), rgba(7,12,20,0.94));
+            box-shadow: 0 0 14px rgba(80, 200, 120, 0.2), inset 0 0 18px rgba(64, 196, 255, 0.08);
+            backdrop-filter: blur(6px);
+        }
+        .item_img::before, .freeslot_card_img::before {
+            width: 100%;
+            height: 170px;
+        }
+        .freeslot_noimg, .is_noimage { display: none !important; }
+
+        /* Detail view: wrap all images with luxury frame + execution overlay */
+        #article_img .view_image,
+        #article_contents img,
+        .pa-image-frame {
+            border-radius: 14px !important;
+            border: 1px solid rgba(255, 215, 0, 0.7) !important;
+            box-shadow: 0 0 18px rgba(255, 215, 0, 0.18), inset 0 0 14px rgba(255, 215, 0, 0.08) !important;
+            position: relative !important;
+            overflow: hidden !important;
+            display: inline-block !important;
+        }
+        #article_img .view_image::after,
+        .pa-image-frame::after {
+            content: "QUANTUM DATA FRAME // STATUS: ACTIVE";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 8px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #50C878;
+            letter-spacing: 0.04em;
+            background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.82));
+        }
+
+        /* Execution layer bar (always visible in post detail) */
+        #view_article {
+            position: relative;
+        }
+        #view_article::before {
+            content: "QUANTUM DATA FRAME // STATUS: ACTIVE";
+            display: block;
+            margin: 0 0 12px 0;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(80, 200, 120, 0.6);
+            background: rgba(0, 0, 0, 0.35);
+            color: #50C878;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            font-size: 11px;
+            box-shadow: 0 0 18px rgba(80, 200, 120, 0.12);
+        }
+
+        /* Code blocks: Digital Frame + Execution Layer */
+        #article_contents pre,
+        #article_contents pre code {
+            background: rgba(0,0,0,0.35) !important;
+            border: 1px solid rgba(255, 215, 0, 0.65) !important;
+            border-radius: 14px !important;
+        }
+        #article_contents pre {
+            padding: 14px 14px 12px !important;
+            overflow: auto;
+            position: relative;
+            box-shadow: 0 0 18px rgba(255, 215, 0, 0.12) !important;
+            margin: 14px 0 !important;
+        }
+        #article_contents pre::before {
+            content: "QUANTUM DATA FRAME // STATUS: ACTIVE";
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            color: #50C878;
+            background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.65));
+            border: 1px solid rgba(80, 200, 120, 0.6);
+            pointer-events: none;
+        }
+        #article_contents pre code {
+            display: block;
+            padding-top: 24px; /* room for ::before pill */
+            color: #EDEDED !important;
+        }
+
+        /* Unified tech-style read view controls (all basic skins) */
+        #bo_basic_view .view_buttons .btn,
+        #bo_basic_view .view_buttons .btn_b01,
+        #bo_basic_view .view_buttons a.btn,
+        #bo_basic_view .view_buttons button,
+        #bo_v_top .btn,
+        #bo_v_top .btn_b01,
+        #bo_v_top a.btn,
+        #bo_v_top button {
+            min-height: 34px !important;
+            padding: 6px 10px !important;
+            font-size: 12px !important;
+            border-radius: 8px !important;
+            border: 1px solid rgba(64,196,255,0.28) !important;
+            background: rgba(2,6,23,0.82) !important;
+            color: #dbeafe !important;
+            box-shadow: 0 0 10px rgba(64,196,255,0.10) !important;
+        }
+        #bo_basic_view .view_buttons .btn:hover,
+        #bo_v_top .btn:hover {
+            border-color: rgba(64,196,255,0.46) !important;
+            background: rgba(64,196,255,0.12) !important;
+            color: #f0f9ff !important;
+        }
+        #bo_basic_view .view_buttons a[title="글쓰기"],
+        #bo_v_top a[title="글쓰기"],
+        #bo_view_bottom_nav a,
+        .view_bottom_nav a,
+        #bo_v_nb .btn_next,
+        #bo_v_nb .btn_prv {
+            background: linear-gradient(180deg, rgba(64,196,255,0.22), rgba(2,6,23,0.90)) !important;
+            color: #e6f7ff !important;
+            border: 1px solid rgba(64,196,255,0.45) !important;
+            box-shadow: 0 0 12px rgba(64,196,255,0.20) !important;
+        }
+        #bo_v_nb .btn_next i,
+        #bo_v_nb .btn_prv i { color: #40C4FF !important; }
+        .bo_v_cate,
+        .subject_cate {
+            background: rgba(64,196,255,0.16) !important;
+            border: 1px solid rgba(64,196,255,0.38) !important;
+            color: #dbeafe !important;
+        }
+        .more_opt.is_view_btn li a,
+        .buttons_more .more a,
+        .buttons_more .more button {
+            color: #dbeafe !important;
+            background: rgba(2,6,23,0.92) !important;
+            border-color: rgba(64,196,255,0.24) !important;
+        }
+        /* Thumbnail restore (cancel previous global hide) */
+        .list_thumb,
+        .item_img,
+        .freeslot_card_img { display: inline-block !important; }
+        .list_thumb img,
+        .item_img img,
+        .freeslot_card_img img {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        .table_subject .list_thumb::before,
+        .item_img::before,
+        .freeslot_card_img::before {
+            content: none !important;
+            display: none !important;
+        }
+        .freeslot_noimg,
+        .is_noimage { display: none !important; }
+        /* FINAL readability force: all board content/comments */
+        .bo_view #article_contents,
+        .bo_view #article_contents *,
+        .bo_view #freeslot_article_contents,
+        .bo_view #freeslot_article_contents *,
+        .bo_view #bo_v_con,
+        .bo_view #bo_v_con * {
+            color: #eaf2ff !important;
+            background-color: transparent !important;
+            opacity: 1 !important;
+            filter: none !important;
+            text-shadow: none !important;
+        }
+        .bo_comment,
+        .bo_comment *,
+        #bo_basic_comment,
+        #bo_basic_comment *,
+        #bo_vc,
+        #bo_vc * {
+            color: #dbeafe !important;
+            text-shadow: none !important;
+            opacity: 1 !important;
+            filter: none !important;
+        }
+        .bo_comment .comment,
+        #bo_basic_comment .comment,
+        #bo_vc .comment,
+        #bo_vc article {
+            background: rgba(2,6,23,0.78) !important;
+            border: 1px solid rgba(64,196,255,0.2) !important;
+        }
+        .bo_comment a,
+        #bo_basic_comment a,
+        #bo_vc a,
+        .bo_comment time,
+        #bo_vc time { color: #9be8ff !important; }
+        .bo_comment .btn,
+        #bo_vc .btn,
+        .comment_actions_row .btn,
+        .comment_actions_row a {
+            background: rgba(64,196,255,0.14) !important;
+            border: 1px solid rgba(64,196,255,0.32) !important;
+            color: #e6f7ff !important;
+        }
+        #bo_view_bottom_nav a[style],
+        .view_bottom_nav a[style],
+        #bo_v_nb .btn_next[style],
+        #bo_v_nb .btn_prv[style] {
+            background: linear-gradient(180deg, rgba(64,196,255,0.22), rgba(2,6,23,0.90)) !important;
+            color: #e6f7ff !important;
+            border: 1px solid rgba(64,196,255,0.45) !important;
+            box-shadow: 0 0 12px rgba(64,196,255,0.20) !important;
+        }
+
+        /* Board titles uppercase and visible */
+        .table_subject a,
+        .item_subject,
+        .freeslot_card_title {
+            text-transform: uppercase;
+            font-weight: 700 !important;
+            letter-spacing: 0.02em;
+        }
+        .pa-title-icon { margin-right: 6px; }
+
+        /* Top header branding final: full-width logo impact */
+        .sp-header-inner {
+            justify-content: center !important;
+            width: min(1680px, 96vw) !important;
+            max-width: min(1680px, 96vw) !important;
+        }
+        .sp-logo {
+            flex: 1 1 auto !important;
+            width: 100% !important;
+            justify-content: center !important;
+            padding: 8px 0 !important;
+        }
+        .sp-logo::after {
+            display: block !important;
+            width: 100% !important;
+            text-align: center !important;
+            font-size: clamp(28px, 3.8vw, 44px) !important;
+            letter-spacing: 0.11em !important;
+            content: "SLOTPASS AI" !important;
+            background: linear-gradient(90deg, #FFD700 0%, #FFFFFF 50%, #FFD700 100%) !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+            color: transparent !important;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.2), 0 0 26px rgba(255, 215, 0, 0.14) !important;
+            font-family: "Inter", "Oswald", "Malgun Gothic", sans-serif !important;
+        }
+    
+/* BOSS_HARD_FORCE_META_V3 */
+#bo_basic_list .co-author-node,
+#bo_list .co-author-node,
+#bo_basic_list .co-status-pill { display:none !important; }
+
+#bo_basic_list .co-author-meta,
+#bo_basic_list .co-author-meta * {
+  display:flex !important;
+  color:#dbeafe !important;
+  opacity:1 !important;
+}
+#bo_basic_list .co-author-meta { gap:8px !important; align-items:center !important; }
+#bo_basic_list .table_writer { display:none !important; }
+
+#bo_basic_list .table_datetime,
+#bo_basic_list .table_hit {
+  display:inline-block !important;
+  color:#cfe8ff !important;
+  font-size:12px !important;
+  margin-right:10px !important;
+}
+#bo_basic_list .table_hit { color:#9be8ff !important; font-weight:700 !important; }
+
+#bo_list .td_name, #bo_list .td_name * {
+  display:table-cell !important;
+  color:#dbeafe !important;
+  opacity:1 !important;
+}
+#bo_list .td_datetime, #bo_list .td_datetime * {
+  display:table-cell !important;
+  color:#dbeafe !important;
+}
+#bo_list .td_num, #bo_list .td_num * {
+  display:table-cell !important;
+  color:#9be8ff !important;
+  font-weight:700 !important;
+}
+
+</style>
+    {% block head %}{% endblock %}
+</head>
+<body class="theme-dark-spring" id="spring-theme-body">
+    <script>
+    (function(){
+      /* Force dark command-center theme globally */
+      var body = document.getElementById('spring-theme-body');
+      if (body) body.className = 'theme-dark-spring';
+      try { localStorage.setItem('slotpass_spring_theme', 'dark'); } catch (e) {}
+    })();
+    </script>
+    <header class="sp-header">
+        <div class="sp-header-inner sp-site-width">
+            <a href="/" class="sp-logo"><img src="/static/img/slotpass_logo.png" alt="SLOTPASS"></a>
+            <div class="sp-header-banner">
+                <img src="/static/img/ma1.jpg" alt="" class="sp-header-banner-img" width="1200" height="200" loading="lazy" decoding="async">
+            </div>
+            <button type="button" id="spring-theme-toggle" class="spring-theme-toggle" aria-label="테마 전환" data-theme="dark">
+                <span class="toggle-label"></span>
+                <span class="toggle-track">
+                    <span class="toggle-thumb"></span>
+                    <span class="toggle-icon" aria-hidden="true">🌙</span>
+                    <span class="toggle-icon" aria-hidden="true">☀️</span>
+                </span>
+            </button>
         </div>
-    </div>
+    </header>
 
-    <div id="hd_wrapper">
-
-        <button type="button" id="opener_aside" class="opener">
-            <i class="fa fa-bars" aria-hidden="true"></i>
-            <span class="blind">열기</span>
+    <div class="sp-nav-wrap">
+    <nav class="sp-nav" id="sp-nav">
+        <button type="button" class="sp-nav-toggle" id="sp-nav-toggle" aria-label="메뉴 열기">
+            <span class="sp-nav-toggle-icon">☰</span>
         </button>
-
-        <a href="/" id="logo"><img src="/static/img/logo_gnuboard6.png" alt="그누보드6"></a>
-
-        <button type="button" id="opener_header_search" class="opener">
-            <i class="fa fa-search" aria-hidden="true"></i>
-            <span class="blind">사용자메뉴</span>
-        </button>
-
-        <div id="header_search">
-            <fieldset>
-                <legend>사이트 내 전체검색</legend>
-
-                <form name="fsearchbox" method="get" action="/bbs/search" onsubmit="return fsearchbox_submit(this);">
-                    <input type="hidden" name="sfl" value="wr_subject||wr_content">
-                    <input type="hidden" name="sop" value="and">
-                    <label for="sch_stx" class="blind">검색어 필수</label>
-                    <input type="text" name="stx" id="sch_stx" maxlength="20" placeholder="검색어를 입력해주세요">
-                    <button type="submit" id="sch_submit" value="검색"><i class="fa fa-search" aria-hidden="true"></i><span class="blind">검색</span></button>
-                </form>
-
-                <script>
-                function fsearchbox_submit(f)
-                {
-                    var stx = f.stx.value.trim();
-                    if (stx.length < 2) {
-                        alert("검색어는 두글자 이상 입력하십시오.");
-                        f.stx.select();
-                        f.stx.focus();
-                        return false;
-                    }
-
-                    var cnt = 0;
-                    for (var i = 0; i < stx.length; i++) {
-                        if (stx.charAt(i) == ' ')
-                            cnt++;
-                    }
-
-                    if (cnt > 1) {
-                        alert("빠른 검색을 위하여 검색어에 공백은 한개만 입력할 수 있습니다.");
-                        f.stx.select();
-                        f.stx.focus();
-                        return false;
-                    }
-                    f.stx.value = stx;
-
-                    return true;
-                }
-                </script>
-            </fieldset>
-
-            {% include "/bbs/popular.html" ignore missing %}
-        </div>
-
-        <script>
-        $(function() {
-            var openerAside = $("#opener_aside");
-            var openerHeaderSearch = $("#opener_header_search");
-            var closerAside = $("#closer_aside");
-            var headerSearch = $("#header_search");
-            var aside = $("#aside");
-
-            openerHeaderSearch.on("click", function() {
-                headerSearch.toggleClass("active");
-            });
-
-            openerAside.on("click", function() {
-                aside.show();
-            });
-
-            closerAside.on("click", function() {
-                aside.hide();
-            });
-
-        });
-        </script>
-
-        <div class="profile_wrap">
-            <span class="profile_img" tabindex="0">
-                <img src="{{ get_member_image(request.state.login_member.mb_id)|safe }}" alt="profile_image">
-            </span>
-            <ul class="hd_login">
-                {% if request.state.login_member %}
-                <li><a href="/bbs/member_confirm?url=/bbs/register_form">정보수정</a></li>
-                {% if request.state.is_super_admin %}
-                <li class="tnb_admin"><a href="/admin">관리자</a></li>
+        <ul class="sp-nav-inner">
+            {% set _raw_labels = request.state.config.cf_7 if request.state.config and request.state.config.cf_7 else "" %}
+            {% set _raw_links = request.state.config.cf_7_subj if request.state.config and request.state.config.cf_7_subj else "" %}
+            {% set _labels = _raw_labels.split('|') if _raw_labels else [] %}
+            {% set _links = _raw_links.split('|') if _raw_links else [] %}
+            {% set _has_any = false %}
+            {% for label in _labels %}
+                {% if label.strip() %}
+                    {% set _has_any = true %}
+                    <li>
+                        <a href="{{ (_links[loop.index0] if _links and loop.index0 < _links|length else '/') or '/' }}">
+                            {{ label.strip() }}
+                        </a>
+                    </li>
                 {% endif %}
-                <li><a href="/bbs/logout">로그아웃</a></li>
-                {% else %}
-                <li><a href="/bbs/register">회원가입</a></li>
-                <li><a href="/bbs/login">로그인</a></li>
-                {% endif %}
-            </ul>
-        </div>
-
+            {% endfor %}
+            {% if not _has_any %}
+            <li><a href="/">HOME</a></li>
+            <li><a href="/">제휴카지노</a></li>
+            <li><a href="/">슬롯무료체험</a></li>
+            <li><a href="/">커뮤니티</a></li>
+            <li><a href="/">이벤트</a></li>
+            <li><a href="/">먹튀검증</a></li>
+            {% endif %}
+            <li><a href="/bbs/attendance">출석체크</a></li>
+            <li><a href="/game_lobby">포인트게임</a></li>
+        </ul>
+    </nav>
     </div>
 
     <script>
-        var profileImg = document.querySelector(".profile_wrap .profile_img");
-        var mypageBox = document.querySelector(".hd_login");
-
-        function handleProfileClick() {
-        mypageBox.classList.add("active");
+    (function(){
+        var nav = document.getElementById('sp-nav');
+        var toggle = document.getElementById('sp-nav-toggle');
+        if (nav && toggle) {
+            toggle.addEventListener('click', function() {
+                nav.classList.toggle('sp-nav-open');
+                toggle.setAttribute('aria-label', nav.classList.contains('sp-nav-open') ? '메뉴 닫기' : '메뉴 열기');
+            });
+            document.addEventListener('click', function(e) {
+                if (nav.classList.contains('sp-nav-open') && !nav.contains(e.target)) {
+                    nav.classList.remove('sp-nav-open');
+                    toggle.setAttribute('aria-label', '메뉴 열기');
+                }
+            });
         }
-
-        function handleProfileFocusout() {
-        mypageBox.classList.remove("active");
-        }
-
-        profileImg.addEventListener("click", handleProfileClick);
-        profileImg.addEventListener("focusout", handleProfileFocusout);
+    })();
     </script>
 
-</div>
-
-{% if errors %}
-<ul>
-    {% for error in errors %}
-    <li>{{ error }}</li>
-    {% endfor %}
-</ul>
-{% endif %}
-
-<hr>
-
-<div id="wrapper">
-
-    <div id="container">
-        <h2 id="container_title"><span>{% block subtitle %}{% endblock subtitle %}</span></h2>
-        {% block content %}
-        {% endblock content %}
+    <div class="sp-content-wrap sp-site-width">
+        {# 게시판·내용 페이지용 (기존 그누보드 subtitle 블록 호환) #}
+        <h2 id="container_title" class="sp-container-title"><span>{% block subtitle %}{% endblock subtitle %}</span></h2>
+        <style>
+        #container_title.sp-container-title { margin: 0 0 16px; padding: 0; font-size: clamp(16px, 1.6vw, 20px); color: #e2e8f0; letter-spacing: 0.04em; }
+        #container_title.sp-container-title span:empty { display: none; }
+        #container_title.sp-container-title:has(span:empty) { display: none; }
+        </style>
+        {% block content %}{% endblock %}
     </div>
 
-    <div id="aside">
-        <button type="button" id="closer_aside">
-            <i class="fa fa-xmark" aria-hidden="true"></i>
-            <span class="blind">전체보기 닫기</span>
-        </button>
+    <footer style="text-align:center; padding:48px 0; background:var(--sp-white); color:var(--sp-text-muted); font-size:13px; border-top:1px solid var(--sp-border); margin-top:40px;">
+        Copyright © SLOTPASS. All rights reserved.
+    </footer>
 
-        {% if request.state.login_member %}
-            {% include "/bbs/outlogin_after.html" %}
-        {% else %}
-            {% include "/bbs/outlogin_before.html" %}
-        {% endif %}
-
-        <!-- 사용자페이지 메뉴 -->
-        {% include "/bbs/menu.html" ignore missing %}
-
-        <!-- 진행 중인 최근 투표 1건 -->
-        {% include "/bbs/poll.html" ignore missing %}
-
-        <!-- 방문자 수 집계 -->
-        {% include "/visit/basic.html" ignore missing %}
+    <!-- 1:1 실시간 채팅 상담 (텔레그램 연동) -->
+    <style>
+    #sp-chat-fixed { position: fixed; bottom: 30px; right: 24px; z-index: 2147483647; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    #sp-chat-fixed .sp-chat-label { background: #fff; border: 1px solid #e2e8f0; padding: 7px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; white-space: nowrap; color: #ff8a00; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    #sp-chat-fixed .sp-chat-svg { width: 65px; height: 65px; filter: drop-shadow(0 4px 10px rgba(255,138,0,0.4)); transition: transform 0.2s, filter 0.2s; }
+    #sp-chat-fixed:hover .sp-chat-svg { transform: scale(1.08); filter: drop-shadow(0 6px 15px rgba(255,138,0,0.6)); }
+    #sp-ghost-chat-window { display: none; position: fixed; bottom: 130px; right: 24px; width: 350px; height: 500px; background: #fff; border: 2px solid #c4a574; border-radius: 15px; z-index: 2147483647; flex-direction: column; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.15); }
+    #sp-ghost-chat-window.on { display: flex !important; }
+    #sp-ghost-chat-window .chat_hd { background: #f8fafc; padding: 15px; color: #ff8a00; font-weight: 700; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+    #sp-ghost-chat-window .chat_bd { flex: 1; padding: 15px; overflow-y: auto; background: #fff; display: flex; flex-direction: column; gap: 10px; }
+    #sp-ghost-chat-window .chat_ft { padding: 10px; background: #f8fafc; display: flex; gap: 5px; border-top: 1px solid #e2e8f0; height: 65px; min-height: 65px; box-sizing: border-box; }
+    #sp-ghost-chat-window .chat_ft input { flex: 1; background: #fff; border: 1px solid #e2e8f0; color: #334155; padding: 10px; border-radius: 8px; outline: none; font-size: 14px; }
+    #sp-ghost-chat-window .chat_ft button { background: #ff8a00; border: none; padding: 0 15px; border-radius: 8px; font-weight: 700; color: #fff; cursor: pointer; }
+    @media (max-width: 480px) {
+        #sp-chat-fixed { bottom: 20px; right: 15px; gap: 5px; }
+        #sp-chat-fixed .sp-chat-svg { width: 55px; height: 55px; }
+        #sp-ghost-chat-window { width: 90vw; max-width: 320px; height: 55vh; max-height: 400px; right: 5vw; bottom: 110px; }
+    }
+    </style>
+    <div id="sp-chat-fixed" onclick="spToggleGhostChat()">
+        <span class="sp-chat-label">1:1 실시간 문의</span>
+        <svg class="sp-chat-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="sp_chat_grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ff8a00"/><stop offset="100%" stop-color="#ff2d55"/></linearGradient></defs>
+            <path fill="url(#sp_chat_grad)" d="M100,180 C55.817,180 20,144.183 20,100 C20,55.817 55.817,20 100,20 C144.183,20 180,55.817 180,100 C180,144.183 144.183,180 100,180 Z M65,90 C59.477,90 55,94.477 55,100 C55,105.523 59.477,110 65,110 C70.523,110 75,105.523 75,100 C75,94.477 70.523,90 65,90 Z M100,90 C94.477,90 90,94.477 90,100 C90,105.523 94.477,110 100,110 C105.523,110 110,105.523 110,100 C110,94.477 105.523,90 100,90 Z M135,90 C129.477,90 125,94.477 125,100 C125,105.523 129.477,110 135,110 C140.523,110 145,105.523 145,100 C145,94.477 140.523,90 135,90 Z"/>
+            <path fill="url(#sp_chat_grad)" d="M158,148 L185,175 L145,160 Z"/>
+        </svg>
     </div>
-
-</div>
-
-<hr>
-
-<div id="ft">
-
-    <div id="ft_wr">
-        <div id="ft_link" class="ft_cnt">
-            <a href="{{ url_for('content_view', co_id='company') }}">회사소개</a>
-            <a href="{{ url_for('content_view', co_id='privacy') }}">개인정보처리방침</a>
-            <a href="{{ url_for('content_view', co_id='provision') }}">서비스이용약관</a>
-            {% if not request.state.is_responsive %}
-                {% if request.state.is_mobile %}
-                    <a href="{{ url_for('device_change', device='pc') }}">PC버전</a>
-                {% else %}
-                    <a href="{{ url_for('device_change', device='mobile') }}">모바일버전</a>
-                {% endif %}
-            {% endif %}
+    <div id="sp-ghost-chat-window">
+        <div class="chat_hd"><span>VIP 실시간 상담</span><span onclick="spToggleGhostChat(false)" style="cursor:pointer;font-size:20px;padding:0 10px;">×</span></div>
+        <div id="sp-ghost-chat-list" class="chat_bd"></div>
+        <div class="chat_ft">
+            <input type="text" id="sp-ghost-msg-input" placeholder="문의 내용을 입력하세요..." onkeypress="if(event.key===&#39;Enter&#39;) spSendGhostMsg()">
+            <button type="button" onclick="spSendGhostMsg()">전송</button>
         </div>
     </div>
-
-    <div id="ft_copy">Copyright &copy; <b>{{ request.url.hostname }}.</b> All rights reserved.</div>
-
-    <button type="button" id="top_btn">
-        <i class="fa fa-arrow-up" aria-hidden="true"></i><span class="blind">상단으로</span>
-    </button>
-    <button type="button" id="darkmode-toggle-switch">
-      <i class="fa-solid fa-moon visible bright"></i>
-      <i class="fa-solid fa-sun visible dark"></i>
-    </button>
-
-</div>
-
-{% if request.state.config.cf_analytics %}
-    {{ request.state.config.cf_analytics|safe }}
-{% endif %}
-
-<script>
-
-    $(function() {
-        $("#top_btn").on("click", function() {
-            $("html, body").animate({scrollTop:0}, '500');
-            return false;
+    <script>
+    function spToggleGhostChat(force) {
+        var w = document.getElementById('sp-ghost-chat-window');
+        if (!w) return;
+        if (force === false) { w.classList.remove('on'); return; }
+        if (force === true) { w.classList.add('on'); return; }
+        w.classList.toggle('on');
+    }
+    function spSendGhostMsg() {
+        var input = document.getElementById('sp-ghost-msg-input');
+        var m = input && input.value ? input.value.trim() : '';
+        if (!m) return;
+        var list = document.getElementById('sp-ghost-chat-list');
+        if (list) {
+            var div = document.createElement('div');
+            div.style.cssText = 'align-self:flex-end;background:#ff8a00;color:#fff;padding:10px;border-radius:10px;font-size:13px;max-width:80%;margin-bottom:5px;';
+            div.textContent = m;
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+        }
+        input.value = '';
+        fetch('/bbs/chat/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ msg: m }), credentials: 'same-origin' });
+    }
+    setInterval(function() {
+        if (!document.getElementById('sp-ghost-chat-window') || !document.getElementById('sp-ghost-chat-window').classList.contains('on')) return;
+        fetch('/bbs/chat/load', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(data) {
+            if (!Array.isArray(data) || data.length === 0) return;
+            var list = document.getElementById('sp-ghost-chat-list');
+            if (!list) return;
+            var h = '';
+            data.forEach(function(m) {
+                var side = (m.sender === 'user') ? 'flex-end' : 'flex-start';
+                var bg = (m.sender === 'user') ? '#ff8a00' : '#f1f5f9';
+                var co = (m.sender === 'user') ? '#fff' : '#334155';
+                h += '<div style="align-self:' + side + ';background:' + bg + ';color:' + co + ';padding:10px;border-radius:10px;font-size:13px;max-width:80%;margin-bottom:5px;">' + (m.message || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div>';
+            });
+            list.innerHTML = h;
+            list.scrollTop = list.scrollHeight;
         });
-    });
+    }, 3000);
+    </script>
 
-</script>
-{% endblock body_html %}
+    <script>
+    (function(){
+      var KEY = 'slotpass_spring_theme';
+      var body = document.getElementById('spring-theme-body');
+      var toggle = document.getElementById('spring-theme-toggle');
+      if (!body || !toggle) return;
+      if (body.classList.contains('theme-white-spring')) toggle.setAttribute('data-theme', 'light');
+      toggle.addEventListener('click', function() {
+        var isDark = body.classList.contains('theme-dark-spring');
+        if (isDark) {
+          body.classList.remove('theme-dark-spring');
+          body.classList.add('theme-white-spring');
+          toggle.setAttribute('data-theme', 'light');
+          localStorage.setItem(KEY, 'white');
+        } else {
+          body.classList.remove('theme-white-spring');
+          body.classList.add('theme-dark-spring');
+          toggle.setAttribute('data-theme', 'dark');
+          localStorage.setItem(KEY, 'dark');
+        }
+      });
+    })();
+    </script>
+    <script>
+    (function() {
+      function iconByText(text) {
+        var t = (text || "").toLowerCase();
+        if (t.indexOf("slot") >= 0 || t.indexOf("슬롯") >= 0) return "🎯";
+        if (t.indexOf("casino") >= 0 || t.indexOf("카지노") >= 0) return "💰";
+        if (t.indexOf("update") >= 0 || t.indexOf("업데이트") >= 0 || t.indexOf("공지") >= 0) return "🎰";
+        if (t.indexOf("ai") >= 0 || t.indexOf("studio") >= 0 || t.indexOf("스튜디오") >= 0) return "📈";
+        if (t.indexOf("free") >= 0 || t.indexOf("자유") >= 0) return "💬";
+        if (t.indexOf("guide") >= 0 || t.indexOf("가이드") >= 0) return "🧭";
+        return "📌";
+      }
+
+      function decorateTitles() {
+        var boardKey = "";
+        var boInput = document.querySelector('input[name="bo_table"]');
+        if (boInput && boInput.value) boardKey = boInput.value;
+        var baseIcon = iconByText(boardKey || document.title || "");
+
+        var selectors = [".table_subject a", ".item_subject", ".freeslot_card_title", "#view_subject"];
+        selectors.forEach(function(sel) {
+          document.querySelectorAll(sel).forEach(function(el) {
+            if (el.dataset.iconReady === "1") return;
+            var icon = iconByText((el.textContent || "") + " " + boardKey) || baseIcon;
+            var span = document.createElement("span");
+            span.className = "pa-title-icon";
+            span.textContent = icon;
+            el.prepend(span);
+            el.dataset.iconReady = "1";
+          });
+        });
+      }
+
+      function wrapDetailImages() {
+        document.querySelectorAll("#article_contents img").forEach(function(img) {
+          if (!img.parentElement || img.parentElement.classList.contains("pa-image-frame")) return;
+          var frame = document.createElement("span");
+          frame.className = "pa-image-frame";
+          img.parentNode.insertBefore(frame, img);
+          frame.appendChild(img);
+        });
+      }
+
+      function sanitizeReadableContent() {
+        var roots = ["#article_contents", "#freeslot_article_contents", "#bo_v_con"];
+        roots.forEach(function(sel) {
+          var root = document.querySelector(sel);
+          if (!root) return;
+          root.querySelectorAll("*").forEach(function(el) {
+            el.style.setProperty("color", "#EDEDED", "important");
+            el.style.setProperty("background-color", "transparent", "important");
+            el.style.setProperty("text-shadow", "none", "important");
+            el.style.setProperty("opacity", "1", "important");
+            el.style.setProperty("filter", "none", "important");
+          });
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function() {
+          decorateTitles();
+          wrapDetailImages();
+          sanitizeReadableContent();
+        });
+      } else {
+        decorateTitles();
+        wrapDetailImages();
+        sanitizeReadableContent();
+      }
+    })();
+    </script>
+    {% block script %}{% endblock %}
+</body>
+</html>

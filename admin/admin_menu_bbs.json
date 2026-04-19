@@ -12,6 +12,12 @@
             "tag": "admin_config"
         },
         {
+            "id": "100150",
+            "name": "메인설정",
+            "url": "/main_form",
+            "tag": "admin_main"
+        },
+        {
             "id": "100200",
             "name": "관리권한설정",
             "url": "/auth_list",

@@ -12,7 +12,7 @@
         <li class="galley_li">
             <a href="{{ url_for('read_post', bo_table=bo_table, wr_id=write.wr_id) }}" class="lt_img">
                 {% if thumbnail.src %}
-                    <img src="/{{ thumbnail.src }}" alt="{{ thumbnail.alt }}">
+                    <img src="{{ thumbnail.src }}" alt="{{ thumbnail.alt }}">
                     {% if thumbnail.noimg %}
                         <span class="is_label is_noimage">No Image</span>
                     {% endif %}

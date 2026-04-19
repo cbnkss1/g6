@@ -133,7 +133,7 @@
                 <a href="{{ url_for('read_post', bo_table=board.bo_table, wr_id=write.wr_id)|set_query_params(request) }}" class="item_link item_img">
                     {% set thumbnail=get_list_thumbnail(request, board, write, gallery_width, gallery_height) %}
                     {% if thumbnail.src %}
-                    <img src="/{{ thumbnail.src }}" alt="{{ thumbnail.alt }}">
+                    <img src="{{ thumbnail.src }}" alt="{{ thumbnail.alt }}">
                     {% if thumbnail.noimg %}
                     <span class="is_label is_noimage">No Image</span>
                     {% endif %}
