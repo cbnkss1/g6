@@ -53,6 +53,7 @@ from app.services.downline_subtree import (
     sanitize_tree_nodes_for_partner,
 )
 from app.services.otp_service import generate_secret, get_provisioning_uri, verify_totp
+from app.services.partner_utils import user_is_partner
 from app.services.risk_engine import check_login_attempt, get_blocked_ips
 from app.services.player_presence import ACTIVE_SECONDS as PLAYER_PRESENCE_TTL_SEC
 from app.services.player_presence import list_player_presence_rows
@@ -106,14 +107,19 @@ def _viewer_member_ops_effective(
 ) -> tuple[bool, bool, bool]:
     """
     회원을 대상으로 할 때 viewer의 (게임머니 지급, 회수, 상세수정) 가능 여부.
-    사이트 `admin_ui` 플래그와 계정별 플래그(총판·스태프)를 AND.
+    사이트 `admin_ui` 플래그와 계정별 플래그를 AND.
     슈퍼관리자는 항상 (True, True, True).
-    요율만 있는 플레이어(하부 파트너)는 지급·회수·상세수정 플래그 없음 — 총판·스태프만.
+    총판·스태프와 동일하게, 롤링 요율로 파트너 콘솔에 들어오는 player 역할도
+    `admin_wallet_*` 플래그로 지급·회수 가능(본인 행 포함, 대상 회원 `member_list_wallet_enabled`는 별도 AND).
+    역할만 player이고 파트너가 아닌 일반 회원은 (False, False, False).
     """
     if viewer.role == USER_ROLE_SUPER_ADMIN:
         return True, True, True
     w_site, e_site = _site_member_admin_flags(db, target_site_id)
-    if viewer.role not in (USER_ROLE_OWNER, USER_ROLE_STAFF):
+    can_wallet_ops = viewer.role in (USER_ROLE_OWNER, USER_ROLE_STAFF) or (
+        viewer.role == USER_ROLE_PLAYER and user_is_partner(db, viewer.id)
+    )
+    if not can_wallet_ops:
         return False, False, False
     cr = bool(viewer.admin_wallet_credit_enabled)
     db_ = bool(viewer.admin_wallet_debit_enabled)
