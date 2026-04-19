@@ -29,8 +29,8 @@ from app.models.admin_allowed_ip import AdminAllowedIp
 from app.models.audit_log import AuditLog
 from app.models.bet import BetHistory
 from app.models.cash_request import CashRequest
-from app.models.enums import GameMoneyLedgerReason
-from app.models.ledger import GameMoneyLedgerEntry
+from app.models.enums import GameMoneyLedgerReason, RollingPointLedgerReason
+from app.models.ledger import GameMoneyLedgerEntry, RollingPointLedgerEntry
 from app.models.settlement_snapshot import SettlementSnapshot
 from app.models.site_config import SiteConfig
 from app.models.user import User, UserGameRollingRate
@@ -47,6 +47,7 @@ from app.services.bet_limit_service import (
 from app.services.bet_history_lines import build_history_lines_for_scope
 from app.services.cash_service import CashService, cash_request_to_dict
 from app.services.dashboard_stats import get_cash_dashboard_metrics, get_today_totals
+from app.services.ledger_labels import label_game_money_reason
 from app.services.downline_subtree import (
     downward_subtree_user_ids,
     downward_subtree_users_for_tree,
@@ -324,7 +325,102 @@ def admin_dashboard_today(
     online_rows = _player_online_rows_for_admin(db, user)
     data["player_online_count"] = len(online_rows)
     data["player_presence_ttl_sec"] = PLAYER_PRESENCE_TTL_SEC
+    vu = db.get(User, user.id)
+    if vu is not None:
+        data["viewer_game_money_balance"] = str(vu.game_money_balance)
+        data["viewer_rolling_point_balance"] = str(vu.rolling_point_balance)
     return data
+
+
+class RollingConvertBody(BaseModel):
+    amount: str
+
+
+@router.post("/wallet/convert-rolling", summary="본인 롤링 포인트(마일리지) → 게임머니 전환")
+def admin_wallet_convert_rolling(
+    body: RollingConvertBody,
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    try:
+        amt = Decimal(str(body.amount).strip().replace(",", ""))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="금액 형식이 올바르지 않습니다.") from e
+    if amt <= 0:
+        raise HTTPException(status_code=400, detail="0보다 큰 금액을 입력하세요.")
+
+    u = db.scalars(select(User).where(User.id == user.id).with_for_update()).one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    if u.rolling_point_balance < amt:
+        raise HTTPException(
+            status_code=400,
+            detail=f"롤링 포인트가 부족합니다. (보유: {u.rolling_point_balance})",
+        )
+
+    q = Decimal("0.000001")
+    new_roll = (u.rolling_point_balance - amt).quantize(q)
+    new_gm = (u.game_money_balance + amt).quantize(q)
+    u.rolling_point_balance = new_roll
+    u.game_money_balance = new_gm
+    db.add(
+        RollingPointLedgerEntry(
+            user_id=u.id,
+            delta=-amt,
+            balance_after=new_roll,
+            reason=RollingPointLedgerReason.CONVERT_TO_GAME_MONEY.value,
+            reference_type="CONVERT",
+            reference_id="rolling_to_gm",
+        )
+    )
+    db.add(
+        GameMoneyLedgerEntry(
+            user_id=u.id,
+            delta=amt,
+            balance_after=new_gm,
+            reason=GameMoneyLedgerReason.ROLLING_POINT_CONVERT.value,
+            reference_type="CONVERT",
+            reference_id="rolling_to_gm",
+        )
+    )
+    db.commit()
+    db.refresh(u)
+    return {
+        "ok": True,
+        "game_money_balance": str(u.game_money_balance),
+        "rolling_point_balance": str(u.rolling_point_balance),
+    }
+
+
+@router.get("/wallet/rolling-convert-history", summary="본인 포인트→게임머니 전환 내역")
+def admin_wallet_rolling_convert_history(
+    user=Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(40, ge=1, le=100),
+) -> Dict[str, Any]:
+    rows = list(
+        db.scalars(
+            select(GameMoneyLedgerEntry)
+            .where(
+                GameMoneyLedgerEntry.user_id == user.id,
+                GameMoneyLedgerEntry.reason == GameMoneyLedgerReason.ROLLING_POINT_CONVERT.value,
+            )
+            .order_by(desc(GameMoneyLedgerEntry.id))
+            .limit(limit)
+        ).all()
+    )
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "id": r.id,
+                "converted_amount": str(r.delta),
+                "game_money_balance_after": str(r.balance_after),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "label": label_game_money_reason(r.reason),
+            }
+        )
+    return {"items": items, "limit": limit}
 
 
 @router.get("/players/online", summary="플레이어 실시간 접속 목록(최근 API·heartbeat 기준)")

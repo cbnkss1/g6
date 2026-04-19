@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
+import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAdminUiStore } from "@/store/useAdminUiStore";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -100,6 +101,26 @@ export function AdminHeader() {
       </div>
 
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {dash.data &&
+        (dash.data.viewer_game_money_balance != null || dash.data.viewer_rolling_point_balance != null) ? (
+          <div className="mr-1 flex max-w-[min(100%,22rem)] shrink-0 items-center gap-1.5 rounded-xl border border-slate-800/90 bg-slate-950/60 px-2 py-1">
+            <div
+              className="flex items-baseline gap-1.5 border-r border-slate-800/80 pr-2"
+              title="게임머니 (보유)"
+            >
+              <span className="text-[9px] font-medium uppercase tracking-wide text-amber-400/85">머니</span>
+              <span className="font-mono text-xs font-semibold tabular-nums text-amber-100">
+                {formatMoneyInt(String(dash.data.viewer_game_money_balance ?? 0))}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1.5 pr-0.5" title="롤링 포인트 = 마일리지">
+              <span className="text-[9px] font-medium uppercase tracking-wide text-violet-300/90">포인트</span>
+              <span className="font-mono text-xs font-semibold tabular-nums text-violet-100">
+                {formatMoneyInt(String(dash.data.viewer_rolling_point_balance ?? 0))}
+              </span>
+            </div>
+          </div>
+        ) : null}
         {dash.data ? (
           <div className="flex max-w-[52vw] flex-wrap items-center justify-end gap-1 sm:max-w-none md:gap-1.5">
             <span className="shrink-0 rounded border border-purple-500/30 bg-purple-500/10 px-1 py-0.5 text-[8px] text-purple-200 sm:px-2 sm:text-[10px]">

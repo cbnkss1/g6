@@ -21,6 +21,9 @@ export type UserPublicState = {
   is_partner?: boolean;
   /** 슈퍼가 켠 하부 관리자(파트너) 제한 UI */
   admin_partner_limited_ui?: boolean;
+  /** 로그인 응답·대시보드 갱신용 (선택) */
+  game_money_balance?: string | null;
+  rolling_point_balance?: string | null;
 };
 
 type AuthState = {
