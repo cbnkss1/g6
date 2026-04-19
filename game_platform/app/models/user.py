@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
@@ -84,6 +85,10 @@ class User(Base):
 
     # 플레이어 보너스 정책(레벨 1~6 등). 어드민 계정은 기본 1.
     member_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+    # 0018_support_tickets_user_flags — 고객센터 요약·리스크 표시용
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    bad_actor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     # 플레이어 회원가입 시 입력 (어드민/파트너 계정은 대개 비움)
     bank_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
