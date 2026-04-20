@@ -322,10 +322,11 @@ export default function SettlementsPage() {
             ) : null}
           </p>
           <p className="text-[11px] leading-relaxed text-slate-500">
-            <strong className="text-slate-400">롤링합</strong>은 각 행의 <strong className="text-slate-300">하부 트리
-            전체</strong>가 받은 추천·본인·차액 롤링만 합산합니다(하부 test가 받은 본인 롤링도 상위 행에 포함). 차액
-            루징(P)은 롤링P 지갑 변동이지만 본 열에는 넣지 않습니다(배팅정산·루징 열과 분리).{" "}
-            <strong className="text-slate-400">배팅정산</strong> = 배팅손익 − 롤링합.
+            <strong className="text-slate-400">롤링합</strong>: 맨 위 <strong className="text-slate-300">전체</strong>{" "}
+            행만 하부 전체 합. <strong className="text-slate-300">직속 하부</strong> 각 행(kcm111·test 등)은 그{" "}
+            <strong className="text-slate-300">로그인 본인</strong>이 받은 추천·본인·차액 롤링만(차액 루징은 별도 열).{" "}
+            <strong className="text-slate-400">배팅정산</strong>은 해당 행 하부 전체 배팅손익에서 하부 전체 롤링을 뺀
+            값(롤링합 열과 숫자가 다를 수 있음).
           </p>
           <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
             <table className="w-full min-w-[1080px] text-left text-sm text-slate-300">
@@ -455,10 +456,9 @@ export default function SettlementsPage() {
             <h3 className="text-base font-semibold text-slate-200">롤링포인트 수령 합계</h3>
             <p className="mt-1 text-xs text-slate-500">
               위에서 고른 <strong className="text-slate-400">기간·KST</strong>와 동일하게 집계합니다.{" "}
-              <strong className="text-slate-400">받은 합계</strong>는{" "}
-              <strong className="text-slate-300">그 로그인 한 명(수령인)</strong> 지갑으로 들어간 롤링P 합(차액·본인·
-              루징·추천)입니다 — 위 정산판 <strong className="text-slate-400">롤링합</strong>(하부 전체 합, 루징 제외)과
-              숫자가 다를 수 있습니다.
+              <strong className="text-slate-400">받은 합계</strong>는 그 로그인(수령인) 지갑으로 들어간 롤링P
+              합(차액·본인·루징·추천). 위 정산판 <strong className="text-slate-400">롤링합</strong>(직속 하부 행)과 같은
+              ‘본인만’ 기준입니다(루징 포함 여부만 열 구성 차이).
             </p>
           </div>
           <span className="text-slate-500">{showRollingVerify ? "접기" : "펼치기"}</span>

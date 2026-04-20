@@ -247,18 +247,33 @@ def _build_revenue_row(
     gt: Optional[Tuple[str, ...]],
     has_children: bool,
     row_scope: str,
+    rolling_for_recipient_only: bool = False,
 ) -> Dict[str, Any]:
-    """한 명(partner_user)을 루트로 한 ids_sub 집계 행. row_scope: full_subtree | direct_child."""
+    """한 명(partner_user)을 루트로 한 ids_sub 집계 행. row_scope: full_subtree | direct_child.
+
+    ``rolling_for_recipient_only`` (직속 하부 행 전용): 롤링·루징 원장 열은 ``partner_user`` **본인**에게
+    들어간 금액만 표시(test 행과 동일한 기준). 배팅정산은 여전히 ``ids_sub`` 전체 롤링 차감을 씀.
+    """
     d = _sum_cash_total(db, ids_sub, t0, t1, "DEPOSIT")
     w = _sum_cash_total(db, ids_sub, t0, t1, "WITHDRAW")
     net = (d - w).quantize(Q)
     st, wi = _sum_bets_total(db, ids_sub, t0, t1, gt)
     bpl = (st - wi).quantize(Q)
-    r_mem = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_FROM_MEMBERS, gt)
-    r_self = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_SELF_ONLY, gt)
-    r_only = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_ROLLING_ONLY, gt)
-    r_lose_pt = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_DIFF_LOSING_ONLY, gt)
-    bet_settle = (bpl - r_only).quantize(Q)
+    # 배팅정산: 팀(서브트리) 손익에서 팀이 받은 순수 롤링(추천·본인·차액) 전부 차감
+    r_only_subtree = _sum_rolling_delta(db, ids_sub, t0, t1, ROLL_REASONS_ROLLING_ONLY, gt)
+    if rolling_for_recipient_only:
+        ids_roll: Tuple[int, ...] = (partner_user.id,)
+        r_mem = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_FROM_MEMBERS, gt)
+        r_self = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_SELF_ONLY, gt)
+        r_only_display = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_REASONS_ROLLING_ONLY, gt)
+        r_lose_pt = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_REASONS_DIFF_LOSING_ONLY, gt)
+    else:
+        ids_roll = ids_sub
+        r_mem = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_FROM_MEMBERS, gt)
+        r_self = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_SELF_ONLY, gt)
+        r_only_display = r_only_subtree
+        r_lose_pt = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_REASONS_DIFF_LOSING_ONLY, gt)
+    bet_settle = (bpl - r_only_subtree).quantize(Q)
     eff_l = _effective_losing_percent_partner_period(db, partner_user.id, ids_sub, t0, t1, gt)
     ls = (bet_settle * eff_l / Decimal("100")).quantize(Q)
     u = partner_user
@@ -274,10 +289,10 @@ def _build_revenue_row(
         "bet_amount": str(st),
         "win_amount": str(wi),
         "bet_profit_loss": str(bpl),
-        "rolling_total": str(r_only),
+        "rolling_total": str(r_only_display),
         "rolling_from_members": str(r_mem),
         "rolling_self": str(r_self),
-        "rolling_points": str(r_only),
+        "rolling_points": str(r_only_display),
         "losing_point_ledger": str(r_lose_pt),
         "losing": str(ls),
         "losing_rate_percent": str(eff_l),
@@ -322,8 +337,9 @@ def get_total_revenue_table(
 ) -> Dict[str, Any]:
     """
     - **첫 번째 행**: ``parent_id`` 기준 **본인 + 전체 하부**(하향 서브트리) 합산. 직추천이 없어도 본인 배팅·롤링이 여기 포함됨.
-    - **이후 행들**: ``parent_id``의 **직속 하부** 각각에 대해, 해당 회원을 루트로 한 하부 서브트리만 집계(하위 탐색용).
-    - 입출금·배팅·롤링: 서브트리 user_id 합산.
+    - **이후 행들**: ``parent_id``의 **직속 하부** 각각에 대해, 해당 회원을 루트로 한 하부 서브트리로 입출금·배팅·배팅정산을 집계.
+    - **롤링·차액루징 원장 열**(``rolling_total`` 등): 직속 하부 행은 **그 회원 본인 수령분만**(하부 test 롤링은 test 행에만 표시).
+    - 첫 행(전체): 서브트리 전체 롤링 합(기존과 동일).
     - 루징: 배팅정산 × 해당 행 파트너 유효 루징% / 100.
     - 보유머니·보유롤링: 행의 파트너 **본인** 스냅샷.
     - ``totals``: 첫 번째(전체) 행과 동일 — 하단 합계는 "선택 상위·기간 전체".
@@ -391,6 +407,7 @@ def get_total_revenue_table(
             gt=gt,
             has_children=(child_counts.get(u.id, 0) > 0),
             row_scope="direct_child",
+            rolling_for_recipient_only=True,
         )
         rows_out.append(row)
 
