@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     USE_API: bool = True  # API 사용
     USE_TEMPLATE: bool = True  # 템플릿 사용
 
+    # Plxmed (카지노 API — service/casino)
+    PLXMED_CLIENT_ID: str = ""
+    PLXMED_SECURITY_KEY: str = ""
+    # true면 콜백 hash 검증 실패해도 수신(배팅내역 동기화). 서명 규격 불일치 시 임시용 — 가능하면 false
+    PLXMED_CALLBACK_SKIP_HASH_VERIFY: bool = False
+
+    # game_platform 배팅 동기화: Plxmed 콜백 수신 후 POST 전달 (끝 슬래시 없음, 예: https://api.example.com)
+    GAME_PLATFORM_API_BASE: str = ""
+    GAME_PLATFORM_INTERNAL_API_KEY: str = ""
+
     # CORS 설정
     CORS_ALLOW_ORIGINS: str = "*"
     CORS_ALLOW_CREDENTIALS: bool = False

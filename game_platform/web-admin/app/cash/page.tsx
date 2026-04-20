@@ -3,11 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { playCashRequestBeep } from "@/lib/playCashBeep";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useAdminDashboardSocket } from "@/hooks/useAdminDashboardSocket";
 
 type CashReq = {
   id: number;
@@ -77,7 +75,6 @@ export default function CashPage() {
   }, [sp]);
 
   const base = publicApiBase();
-  const [alertBanner, setAlertBanner] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const authHeaders = useCallback(() => {
@@ -85,26 +82,6 @@ export default function CashPage() {
     if (!t) return null;
     return { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } as const;
   }, []);
-
-  // WS 실시간 — 새 신청 알림 수신 시 목록 갱신 + 표시·소리
-  useAdminDashboardSocket({
-    onExtraMessage: (msg) => {
-      if (
-        msg.type === "cash_request_new" ||
-        msg.type === "cash_request_approved" ||
-        msg.type === "cash_request_updated"
-      ) {
-        qc.invalidateQueries({ queryKey: ["cash-requests"] });
-      }
-      if (msg.type === "cash_request_new") {
-        const p = msg.payload ?? {};
-        const amt = p.amount != null ? String(p.amount) : "";
-        setAlertBanner(`새 입출금 신청이 접수되었습니다.${amt ? ` (금액 ${amt})` : ""}`);
-        playCashRequestBeep();
-        window.setTimeout(() => setAlertBanner(null), 12_000);
-      }
-    },
-  });
 
   const params = new URLSearchParams();
   if (statusFilter) params.set("status", statusFilter);
@@ -207,25 +184,10 @@ export default function CashPage() {
           실시간 입출금 관리
         </h1>
         <p className="mt-2 text-[11px] text-slate-600">
-          새 신청 시 상단 배너·알림음이 재생됩니다. 브라우저 정책상 <strong className="text-slate-500">이 페이지를 한 번 클릭</strong>한 뒤부터 소리가 날 수 있습니다.
+          새 입출금 신청은 <strong className="text-slate-500">슈퍼관리자</strong> 화면 우하단 토스트·알림음으로도 안내됩니다. 목록은 WebSocket으로 자동 갱신됩니다.
         </p>
       </div>
 
-      {alertBanner && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 rounded-xl border border-premium/40 bg-premium/15 px-4 py-3 text-sm text-premium shadow-[0_0_20px_rgba(212,175,55,0.15)]"
-        >
-          <span className="font-medium">{alertBanner}</span>
-          <button
-            type="button"
-            className="shrink-0 rounded-lg border border-premium/40 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/5"
-            onClick={() => setAlertBanner(null)}
-          >
-            닫기
-          </button>
-        </div>
-      )}
       {actionError && (
         <div className="rounded-xl border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm text-red-200">
           {actionError}

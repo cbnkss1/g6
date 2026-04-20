@@ -6,7 +6,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ from app.services.powerball_service import (
     commit_poll_transaction_if_modified,
     poll_once as powerball_poll_once,
 )
+from app.services.plxmed_bet_callback_service import process_plxmed_data_rows
 from app.services.settlement_service import SettlementResult, SettlementService
 from app.websockets.manager import admin_ws_manager
 
@@ -186,6 +187,37 @@ def internal_list_players(db: Session = Depends(get_db)) -> Dict[str, Any]:
     }
 
 
+@router.post("/plxmed-casino-callback", dependencies=[Depends(require_internal_key)])
+def internal_plxmed_casino_callback(
+    payload: Any = Body(...),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    V6 등에서 Plxmed 원본 콜백 JSON을 그대로 전달.
+    (서명은 V6에서 이미 검증했다고 가정 — 여기는 X-Internal-Key 필수)
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON object required")
+    uc = str(payload.get("usercode") or "").strip()
+    if not uc:
+        raise HTTPException(status_code=400, detail="usercode required")
+    rows = payload.get("data")
+    if rows is not None and not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail="data must be an array")
+    out = process_plxmed_data_rows(
+        db,
+        usercode=uc,
+        data_rows=rows,
+        username_hint=None,
+    )
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return out
+
+
 @router.post("/place-bet", dependencies=[Depends(require_internal_key)])
 def internal_place_bet(
     body: PlaceBetRequestBody,
@@ -198,6 +230,7 @@ def internal_place_bet(
         external_bet_uid=body.external_bet_uid.strip()[:64],
         game_type=body.game_type.strip().upper()[:32],
         stake=Decimal(body.stake),
+        wallet_neutral=body.wallet_neutral,
     )
     if not res.ok:
         raise HTTPException(status_code=400, detail=res.detail)
@@ -224,6 +257,7 @@ async def internal_settle(
             external_bet_uid=body.external_bet_uid,
             game_result=gr,
             win_amount=Decimal(body.win_amount),
+            wallet_neutral=body.wallet_neutral,
         )
         db.commit()
     except Exception:

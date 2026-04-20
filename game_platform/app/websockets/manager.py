@@ -62,4 +62,45 @@ class AdminWebSocketManager:
             self.disconnect(ws)
 
 
+class PlayerWebSocketManager:
+    """플레이어 JWT(user_id)별 WebSocket — 관리자 쪽지·문의 답변 푸시."""
+
+    def __init__(self) -> None:
+        self._by_user: dict[int, set[WebSocket]] = {}
+
+    async def accept_player(self, user_id: int, websocket: WebSocket) -> None:
+        await websocket.accept()
+        if user_id not in self._by_user:
+            self._by_user[user_id] = set()
+        self._by_user[user_id].add(websocket)
+
+    def disconnect(self, user_id: int, websocket: WebSocket) -> None:
+        conns = self._by_user.get(user_id)
+        if not conns:
+            return
+        conns.discard(websocket)
+        if not conns:
+            del self._by_user[user_id]
+
+    async def send_to_user(self, user_id: int, event_type: str, payload: dict[str, Any]) -> None:
+        body = json.dumps(
+            {"type": event_type, "payload": _json_safe(payload)},
+            ensure_ascii=False,
+        )
+        conns = list(self._by_user.get(user_id, ()))
+        stale: list[WebSocket] = []
+        for ws in conns:
+            try:
+                if ws.client_state != WebSocketState.CONNECTED:
+                    stale.append(ws)
+                    continue
+                await ws.send_text(body)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("player ws send failed: %s", e)
+                stale.append(ws)
+        for ws in stale:
+            self.disconnect(user_id, ws)
+
+
 admin_ws_manager = AdminWebSocketManager()
+player_ws_manager = PlayerWebSocketManager()

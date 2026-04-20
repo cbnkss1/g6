@@ -104,7 +104,9 @@ def get_casino_wallet_status(db: Session, user: User) -> Dict[str, Any]:
         }
 
     try:
-        uc, tok = plx.plxmed_createaccount_usercode_token(user.login_id, getattr(user, "email", None))
+        uc, tok = plx.plxmed_createaccount_usercode_token(
+            user.login_id, getattr(user, "email", None), user_id=user.id
+        )
         bal_raw = plx.plxmed_get_balance(uc, tok)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -178,7 +180,9 @@ def transfer_main_to_casino(db: Session, user: User, amount_raw: str) -> Dict[st
         }
 
     try:
-        uc, tok = plx.plxmed_createaccount_usercode_token(locked.login_id, getattr(locked, "email", None))
+        uc, tok = plx.plxmed_createaccount_usercode_token(
+            locked.login_id, getattr(locked, "email", None), user_id=locked.id
+        )
         resp = plx.plxmed_add_member_point(uc, _decimal_str_for_plxmed(amt), ext_id)
         if not plx.plxmed_success(resp):
             logger.warning("plxmed addmemberpoint not success: %s", resp)
@@ -253,7 +257,9 @@ def transfer_casino_to_main(db: Session, user: User, amount_raw: str) -> Dict[st
         }
 
     try:
-        uc, tok = plx.plxmed_createaccount_usercode_token(user.login_id, getattr(user, "email", None))
+        uc, tok = plx.plxmed_createaccount_usercode_token(
+            user.login_id, getattr(user, "email", None), user_id=user.id
+        )
         resp = plx.plxmed_subtract_member_point(uc, _decimal_str_for_plxmed(amt), ext_id)
         if not plx.plxmed_success(resp):
             raise RuntimeError(resp.get("message", resp.get("code", "subtractmemberpoint failed")))

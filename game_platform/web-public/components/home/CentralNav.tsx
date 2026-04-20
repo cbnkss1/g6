@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { useNotificationBlock } from "@/lib/notificationBlockContext";
 
 export type CentralNavItem = {
   key: string;
@@ -21,7 +24,18 @@ const ITEMS: CentralNavItem[] = [
   { key: "wallet", label: "입출금", hint: "Wallet", href: "/wallet", emoji: "💳" },
 ];
 
-function Card({ item }: { item: CentralNavItem }) {
+function isGameNavHref(href: string | null): boolean {
+  if (!href) return false;
+  return (
+    href.startsWith("/match-list") ||
+    href.startsWith("/casino") ||
+    href.startsWith("/slot") ||
+    href.startsWith("/powerball")
+  );
+}
+
+function Card({ item, gameLocked }: { item: CentralNavItem; gameLocked: boolean }) {
+  const router = useRouter();
   const cls =
     "group relative flex min-h-[108px] flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.05] to-transparent p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition hover:border-cyan-400/35 hover:shadow-[0_0_32px_rgba(34,211,238,0.12)] sm:min-h-[120px]";
 
@@ -34,10 +48,25 @@ function Card({ item }: { item: CentralNavItem }) {
       <div>
         <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">{item.hint}</p>
         <p className="mt-1 font-display text-lg font-semibold text-white sm:text-xl">{item.label}</p>
+        {gameLocked && isGameNavHref(item.href) ? (
+          <p className="mt-1.5 text-[10px] font-medium leading-tight text-amber-300/95">중요 쪽지 확인 필요</p>
+        ) : null}
       </div>
       <span className={shine} />
     </>
   );
+
+  if (item.href && gameLocked && isGameNavHref(item.href)) {
+    return (
+      <button
+        type="button"
+        className={`${cls} cursor-pointer border-amber-500/25 opacity-90 hover:border-amber-400/40`}
+        onClick={() => router.push("/messages")}
+      >
+        {inner}
+      </button>
+    );
+  }
 
   if (item.href) {
     return (
@@ -54,6 +83,8 @@ function Card({ item }: { item: CentralNavItem }) {
 }
 
 export function CentralNav() {
+  const { blocked } = useNotificationBlock();
+
   return (
     <section className="mt-6 sm:mt-8">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
@@ -67,7 +98,7 @@ export function CentralNav() {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {ITEMS.map((item) => (
-          <Card key={item.key} item={item} />
+          <Card key={item.key} item={item} gameLocked={blocked} />
         ))}
       </div>
     </section>

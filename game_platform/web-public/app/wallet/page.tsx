@@ -9,6 +9,8 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { usePlayerAuth } from "@/lib/playerAuthContext";
 import {
   playerCreateCashRequest,
+  playerDeleteAllCashRequests,
+  playerDeleteCashRequest,
   playerListCashRequests,
   type CashRequestPublic,
 } from "@/lib/playerApi";
@@ -25,6 +27,11 @@ export default function WalletPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [items, setItems] = useState<CashRequestPublic[]>([]);
   const [listErr, setListErr] = useState<string | null>(null);
+  /** 입출금 삭제 중 */
+  const [cashDel, setCashDel] = useState<number | "all" | null>(null);
+
+  /** 처리중(PROCESSING)만 삭제 불가 — 승인·거절·대기는 내역에서 제거 가능 */
+  const cashRowDeletable = (status: string) => status !== "PROCESSING";
 
   const supportUrl = playerSupportUrl();
   const memoUrl = playerMemoUrl();
@@ -44,6 +51,39 @@ export default function WalletPage() {
   useEffect(() => {
     if (hydrated && token) void loadList();
   }, [hydrated, token, loadList]);
+
+  async function onDeleteCashRow(id: number) {
+    if (!window.confirm("이 신청 내역을 삭제할까요?")) return;
+    setListErr(null);
+    setCashDel(id);
+    try {
+      await playerDeleteCashRequest(token!, id);
+      await loadList();
+    } catch (e) {
+      setListErr(e instanceof Error ? e.message : "삭제에 실패했습니다.");
+    } finally {
+      setCashDel(null);
+    }
+  }
+
+  async function onDeleteAllCashRows() {
+    if (
+      !window.confirm(
+        "목록에 보이는 신청을 모두 삭제합니다. (처리 중인 건만 제외) 계속할까요?",
+      )
+    )
+      return;
+    setListErr(null);
+    setCashDel("all");
+    try {
+      await playerDeleteAllCashRequests(token!);
+      await loadList();
+    } catch (e) {
+      setListErr(e instanceof Error ? e.message : "삭제에 실패했습니다.");
+    } finally {
+      setCashDel(null);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -224,15 +264,27 @@ export default function WalletPage() {
             </div>
 
             <div className="glass-panel overflow-hidden p-5">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-slate-300">내 신청 내역</h2>
-                <button
-                  type="button"
-                  onClick={() => void loadList()}
-                  className="text-[11px] text-slate-500 hover:text-premium-glow"
-                >
-                  새로고침
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {items.some((r) => cashRowDeletable(r.status)) ? (
+                    <button
+                      type="button"
+                      disabled={cashDel !== null}
+                      onClick={() => void onDeleteAllCashRows()}
+                      className="rounded-lg border border-rose-500/40 bg-rose-950/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-rose-100 shadow-[0_0_14px_-4px_rgba(244,63,94,0.45)] transition hover:border-rose-400/65 hover:bg-rose-900/55 disabled:opacity-40"
+                    >
+                      {cashDel === "all" ? "삭제 중…" : "전체 삭제"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void loadList()}
+                    className="text-[11px] text-slate-500 hover:text-premium-glow"
+                  >
+                    새로고침
+                  </button>
+                </div>
               </div>
               {listErr && <p className="text-sm text-amber-400">{listErr}</p>}
               {!listErr && items.length === 0 && (
@@ -240,22 +292,40 @@ export default function WalletPage() {
               )}
               <ul className="mt-2 max-h-64 divide-y divide-white/5 overflow-y-auto text-sm">
                 {items.map((row) => (
-                  <li key={row.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                  <li
+                    key={row.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                  >
                     <span className="text-slate-400">
                       {row.request_type === "DEPOSIT" ? "입금" : "출금"}{" "}
                       <span className="font-mono text-slate-200">{row.amount}</span>
                     </span>
-                    <span
-                      className={
-                        row.status === "PENDING"
-                          ? "text-amber-400"
-                          : row.status === "APPROVED"
-                            ? "text-emerald-400"
-                            : "text-slate-500"
-                      }
-                    >
-                      {row.status}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={
+                          row.status === "PENDING"
+                            ? "text-amber-400"
+                            : row.status === "APPROVED"
+                              ? "text-emerald-400"
+                              : row.status === "REJECTED"
+                                ? "text-rose-400"
+                                : "text-slate-500"
+                        }
+                      >
+                        {row.status}
+                      </span>
+                      {cashRowDeletable(row.status) ? (
+                        <button
+                          type="button"
+                          title="이 신청 삭제"
+                          disabled={cashDel !== null}
+                          onClick={() => void onDeleteCashRow(row.id)}
+                          className="rounded-md border border-rose-500/35 bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-rose-200/95 transition hover:border-rose-400/55 hover:bg-rose-950/40 disabled:opacity-40"
+                        >
+                          {cashDel === row.id ? "…" : "삭제"}
+                        </button>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>

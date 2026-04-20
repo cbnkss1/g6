@@ -32,7 +32,9 @@ function truncWon(n: number): number {
 
 /**
  * 수령인 행 합계로 상세 팝업 기본 필터를 고릅니다.
- * 차액 루징은 하부(losing)·본인(losing_self) 열을 각각 비교합니다.
+ *
+ * **하부 차액 루징(`losing`)** 은 금액이 커도 “롤링”으로 보는 수령(차액 롤링 100원 단위 등)보다
+ * 나중에만 기본 탭으로 씁니다. kcm111 처럼 차액 롤링+하부 루징이 같이 있으면 차액 롤링(chain)을 연다.
  */
 export function defaultDetailScopeFromRow(row: RollingRowSums): RollingDetailScope {
   const diff = parseSum(row.rolling_paid_sum);
@@ -41,18 +43,22 @@ export function defaultDetailScopeFromRow(row: RollingRowSums): RollingDetailSco
   const losingSelf = parseSum(row.rolling_diff_losing_self_sum);
   const ref = parseSum(row.rolling_referral_sum);
 
-  const candidates: { scope: RollingDetailScope; raw: number; wonMag: number }[] = [
+  const primary: { scope: RollingDetailScope; raw: number; wonMag: number }[] = [
     { scope: "chain", raw: diff, wonMag: Math.abs(truncWon(diff)) },
     { scope: "self", raw: self, wonMag: Math.abs(truncWon(self)) },
-    { scope: "losing", raw: losingDown, wonMag: Math.abs(truncWon(losingDown)) },
-    { scope: "losing_self", raw: losingSelf, wonMag: Math.abs(truncWon(losingSelf)) },
     { scope: "referral", raw: ref, wonMag: Math.abs(truncWon(ref)) },
+    { scope: "losing_self", raw: losingSelf, wonMag: Math.abs(truncWon(losingSelf)) },
   ];
+  const losingDownCand = {
+    scope: "losing" as const,
+    raw: losingDown,
+    wonMag: Math.abs(truncWon(losingDown)),
+  };
 
-  const maxWonMag = Math.max(...candidates.map((c) => c.wonMag));
-  if (maxWonMag > 0) {
-    const tieBreak: RollingDetailScope[] = ["self", "chain", "referral", "losing_self", "losing"];
-    const atMax = candidates.filter((c) => c.wonMag === maxWonMag);
+  const maxPrimary = Math.max(...primary.map((c) => c.wonMag));
+  if (maxPrimary > 0) {
+    const tieBreak: RollingDetailScope[] = ["self", "chain", "referral", "losing_self"];
+    const atMax = primary.filter((c) => c.wonMag === maxPrimary);
     if (atMax.length === 1) return atMax[0].scope;
     for (const scope of tieBreak) {
       const hit = atMax.find((c) => c.scope === scope);
@@ -61,10 +67,15 @@ export function defaultDetailScopeFromRow(row: RollingRowSums): RollingDetailSco
     return atMax[0].scope;
   }
 
-  const maxRaw = Math.max(...candidates.map((c) => Math.abs(c.raw)));
+  if (losingDownCand.wonMag > 0 || Math.abs(losingDownCand.raw) > 1e-12) {
+    return "losing";
+  }
+
+  const all = [...primary, losingDownCand];
+  const maxRaw = Math.max(...all.map((c) => Math.abs(c.raw)));
   if (maxRaw < 1e-12) return "all";
   const tieBreak2: RollingDetailScope[] = ["self", "chain", "referral", "losing_self", "losing"];
-  const atRaw = candidates.filter((c) => Math.abs(c.raw) === maxRaw);
+  const atRaw = all.filter((c) => Math.abs(c.raw) === maxRaw);
   if (atRaw.length === 1) return atRaw[0].scope;
   for (const scope of tieBreak2) {
     const hit = atRaw.find((c) => c.scope === scope);

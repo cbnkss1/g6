@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import Integer, and_, cast, case, func, select
 from sqlalchemy.orm import Session, aliased
 
+from app.constants import USER_ROLE_SUPER_ADMIN
 from app.models.bet import BetHistory
 from app.models.enums import RollingPointLedgerReason
 from app.models.ledger import RollingPointLedgerEntry
@@ -135,6 +136,7 @@ def get_rolling_settlement_lines(
     stmt = stmt.where(
         RollingPointLedgerEntry.created_at >= t0,
         RollingPointLedgerEntry.created_at < t1,
+        Referrer.role != USER_ROLE_SUPER_ADMIN,
     )
     gt = _game_types_for_vertical(vertical)
     if gt:

@@ -19,6 +19,8 @@ class SettlementRequestBody(BaseModel):
     # WIN | LOSE | TIE | CANCEL | VOID | PUSH … (환불형은 롤링·유효배팅 0)
     game_result: str
     win_amount: Decimal = Decimal("0")
+    # True면 Plxmed 카지노 지갑 등 — 메인 게임머니 입출금 없이 BetHistory·롤링만 반영
+    wallet_neutral: bool = False
 
 
 class PlaceBetRequestBody(BaseModel):
@@ -26,3 +28,4 @@ class PlaceBetRequestBody(BaseModel):
     game_type: str = Field(..., max_length=32)
     stake: Decimal = Field(..., gt=0)
     external_bet_uid: str = Field(..., max_length=64)
+    wallet_neutral: bool = False

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   playerSupportCreateTicket,
+  playerSupportDeleteAllTickets,
+  playerSupportDeleteTicket,
   playerSupportListTickets,
   playerSupportRecentBets,
   type SupportBetRow,
@@ -38,6 +40,8 @@ export function PlayerSupportCyberForm({ token, onSubmitted }: Props) {
   const [bets, setBets] = useState<SupportBetRow[]>([]);
   const [betLoading, setBetLoading] = useState(false);
   const [sel, setSel] = useState<Set<number>>(new Set());
+  /** 문의 삭제 중: 티켓 id 또는 "all" */
+  const [ticketDel, setTicketDel] = useState<number | "all" | null>(null);
 
   const loadTickets = useCallback(async () => {
     const d = await playerSupportListTickets(token);
@@ -56,6 +60,12 @@ export function PlayerSupportCyberForm({ token, onSubmitted }: Props) {
     return () => {
       c = true;
     };
+  }, [loadTickets]);
+
+  useEffect(() => {
+    const fn = () => void loadTickets();
+    window.addEventListener("player-support-refresh", fn);
+    return () => window.removeEventListener("player-support-refresh", fn);
   }, [loadTickets]);
 
   async function openBetModal() {
@@ -81,6 +91,36 @@ export function PlayerSupportCyberForm({ token, onSubmitted }: Props) {
       else n.add(id);
       return n;
     });
+  }
+
+  async function onDeleteTicket(id: number) {
+    if (!window.confirm(`#${id} 문의를 삭제할까요?`)) return;
+    setErr(null);
+    setTicketDel(id);
+    try {
+      await playerSupportDeleteTicket(token, id);
+      await loadTickets();
+      window.dispatchEvent(new Event("player-support-refresh"));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "삭제에 실패했습니다.");
+    } finally {
+      setTicketDel(null);
+    }
+  }
+
+  async function onDeleteAllTickets() {
+    if (!window.confirm("접수한 문의를 모두 삭제합니다. 계속할까요?")) return;
+    setErr(null);
+    setTicketDel("all");
+    try {
+      await playerSupportDeleteAllTickets(token);
+      await loadTickets();
+      window.dispatchEvent(new Event("player-support-refresh"));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "삭제에 실패했습니다.");
+    } finally {
+      setTicketDel(null);
+    }
   }
 
   function confirmBets() {
@@ -243,7 +283,19 @@ export function PlayerSupportCyberForm({ token, onSubmitted }: Props) {
 
       <aside className="lg:col-span-2">
         <div className="rounded-2xl border border-emerald-500/20 bg-[#111827]/95 p-5 shadow-[0_0_32px_-14px_rgba(16,185,129,0.35)]">
-          <h3 className="text-sm font-semibold text-emerald-300/90">내 문의 현황</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-emerald-300/90">내 문의 현황</h3>
+            {tickets.length > 0 ? (
+              <button
+                type="button"
+                disabled={ticketDel !== null}
+                onClick={() => void onDeleteAllTickets()}
+                className="shrink-0 rounded-lg border border-rose-500/40 bg-gradient-to-r from-rose-950/80 to-rose-900/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-rose-100 shadow-[0_0_18px_-6px_rgba(244,63,94,0.55)] transition hover:border-rose-400/70 hover:from-rose-900/90 hover:to-rose-800/60 disabled:opacity-40"
+              >
+                {ticketDel === "all" ? "삭제 중…" : "전체 삭제"}
+              </button>
+            ) : null}
+          </div>
           <ul className="mt-3 max-h-[420px] space-y-2 overflow-y-auto text-xs">
             {tickets.length === 0 ? (
               <li className="text-slate-500">접수된 문의가 없습니다.</li>
@@ -253,17 +305,28 @@ export function PlayerSupportCyberForm({ token, onSubmitted }: Props) {
                   key={t.id}
                   className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-3 py-2 text-slate-300"
                 >
-                  <div className="flex justify-between gap-2 text-[11px] text-slate-500">
-                    <span>#{t.id}</span>
-                    <span
-                      className={
-                        t.status === "ANSWERED" || t.status === "CLOSED"
-                          ? "text-emerald-400"
-                          : "text-amber-300"
-                      }
-                    >
-                      {t.status}
-                    </span>
+                  <div className="flex items-start justify-between gap-2 text-[11px] text-slate-500">
+                    <span className="tabular-nums">#{t.id}</span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span
+                        className={
+                          t.status === "ANSWERED" || t.status === "CLOSED"
+                            ? "text-emerald-400"
+                            : "text-amber-300"
+                        }
+                      >
+                        {t.status}
+                      </span>
+                      <button
+                        type="button"
+                        title="이 문의 삭제"
+                        disabled={ticketDel !== null}
+                        onClick={() => void onDeleteTicket(t.id)}
+                        className="rounded-md border border-rose-500/30 bg-rose-950/50 px-1.5 py-0.5 text-[9px] font-semibold text-rose-200/95 transition hover:border-rose-400/60 hover:bg-rose-900/70 disabled:opacity-40"
+                      >
+                        {ticketDel === t.id ? "…" : "삭제"}
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-1 font-medium text-slate-200">{t.title}</p>
                   {t.admin_reply ? (

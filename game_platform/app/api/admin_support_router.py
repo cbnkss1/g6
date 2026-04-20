@@ -17,6 +17,8 @@ from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.services.support_user_summary import build_support_user_summary
 from app.websockets.manager import admin_ws_manager
+from app.websockets.ops_events import broadcast_support_ticket_new
+from app.websockets.player_events import notify_support_ticket_replied
 
 router = APIRouter()
 
@@ -132,6 +134,7 @@ def create_partner_to_super_ticket(
     db.commit()
     db.refresh(row)
     background_tasks.add_task(_broadcast_support_dashboard_refresh)
+    background_tasks.add_task(broadcast_support_ticket_new, row.id)
     return _admin_list_row(db, row)
 
 
@@ -251,6 +254,13 @@ def admin_reply_support_ticket(
     db.commit()
     db.refresh(row)
     background_tasks.add_task(_broadcast_support_dashboard_refresh)
+    title_snip = (row.title or "").strip()[:200]
+    background_tasks.add_task(
+        notify_support_ticket_replied,
+        row.user_id,
+        row.id,
+        title_snip,
+    )
     return {"ok": True, "ticket_id": row.id, "status": row.status}
 
 

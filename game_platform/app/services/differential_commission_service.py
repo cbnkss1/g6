@@ -42,6 +42,15 @@ from app.services.settlement_basis import (
 Q = Decimal("0.000001")
 MAX_CHAIN_DEPTH = 32
 
+# 원장 game_type 은 LIVE_CASINO 인데, 요율 행은 CASINO·BACCARAT·LIVE_CASINO 로 따로 저장된 경우가 공존
+_CASINO_FAMILY_KEYS: Tuple[str, ...] = ("CASINO", "BACCARAT", "LIVE_CASINO")
+_CASINO_KEY_PRIORITY = {"CASINO": 0, "BACCARAT": 1, "LIVE_CASINO": 2}
+
+
+def _is_casino_family_game_type(game_type: str) -> bool:
+    g = (game_type or "").strip().upper()[:32]
+    return g in _CASINO_FAMILY_KEYS
+
 
 def fetch_downline_user_ids(
     db: Session,
@@ -142,16 +151,45 @@ class DifferentialCommissionService:
     def _load_rate_map(
         db: Session, user_ids: List[int], game_type: str
     ) -> Dict[int, Tuple[Decimal, Decimal]]:
-        gt = game_type.strip().upper()[:32]
+        m: Dict[int, Tuple[Decimal, Decimal]] = {uid: (Decimal("0"), Decimal("0")) for uid in user_ids}
+        gt_raw = (game_type or "").strip().upper()[:32]
+
+        if _is_casino_family_game_type(game_type):
+            rows = list(
+                db.scalars(
+                    select(UserGameRollingRate).where(
+                        UserGameRollingRate.user_id.in_(user_ids),
+                        UserGameRollingRate.game_type.in_(_CASINO_FAMILY_KEYS),
+                    )
+                ).all()
+            )
+            by_uid: Dict[int, List[UserGameRollingRate]] = {}
+            for r in rows:
+                by_uid.setdefault(int(r.user_id), []).append(r)
+            for uid in user_ids:
+                cand = by_uid.get(uid, [])
+                if not cand:
+                    continue
+                best = min(
+                    cand,
+                    key=lambda rr: _CASINO_KEY_PRIORITY.get(
+                        (rr.game_type or "").strip().upper(), 99
+                    ),
+                )
+                m[uid] = (
+                    Decimal(str(best.rolling_rate_percent)).quantize(Decimal("0.0001")),
+                    Decimal(str(best.losing_rate_percent)).quantize(Decimal("0.0001")),
+                )
+            return m
+
         rows = list(
             db.scalars(
                 select(UserGameRollingRate).where(
                     UserGameRollingRate.user_id.in_(user_ids),
-                    UserGameRollingRate.game_type == gt,
+                    UserGameRollingRate.game_type == gt_raw,
                 )
             ).all()
         )
-        m: Dict[int, Tuple[Decimal, Decimal]] = {uid: (Decimal("0"), Decimal("0")) for uid in user_ids}
         for r in rows:
             m[int(r.user_id)] = (
                 Decimal(str(r.rolling_rate_percent)).quantize(Decimal("0.0001")),

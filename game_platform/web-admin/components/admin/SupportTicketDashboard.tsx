@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { adminFetch } from "@/lib/adminFetch";
@@ -88,10 +89,18 @@ export function SupportTicketDashboard() {
   const token = useAuthStore((s) => s.token);
   const base = publicApiBase();
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   /** 대기(OPEN) / 처리완료(ANSWERED·CLOSED) / 전체 — 슈퍼·총판 동일 API */
   const [listQueue, setListQueue] = useState<ListQueue>("pending");
   const [replyText, setReplyText] = useState("");
+
+  useEffect(() => {
+    const raw = searchParams.get("ticket");
+    if (!raw) return;
+    const id = parseInt(raw, 10);
+    if (Number.isFinite(id) && id > 0) setSelectedId(id);
+  }, [searchParams]);
 
   const listQ = useQuery({
     queryKey: ["admin", "support-tickets", token ?? "", listQueue],

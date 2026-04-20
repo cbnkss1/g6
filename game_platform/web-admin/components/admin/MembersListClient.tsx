@@ -103,6 +103,122 @@ function MemberWalletRowSwitch({
   );
 }
 
+/** 모바일: 가로 테이블 대신 카드 — 지급/회수 버튼 정렬·터치 영역 확보 */
+function MemberRowMobile({
+  u,
+  token,
+  base,
+  canPatchMemberWalletFlag,
+  uplineLabel,
+  setWallet,
+}: {
+  u: MemberRow;
+  token: string;
+  base: string;
+  canPatchMemberWalletFlag: boolean;
+  uplineLabel: string;
+  setWallet: (v: { userId: number; loginId: string; mode: "credit" | "debit" }) => void;
+}) {
+  const canCredit = (u.can_wallet_credit ?? u.can_wallet_adjust) !== false;
+  const canDebit = (u.can_wallet_debit ?? u.can_wallet_adjust) !== false;
+
+  return (
+    <article className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10px] text-slate-600">#{u.id}</p>
+          <p className="truncate text-base font-semibold text-slate-100">{u.login_id}</p>
+          <p className="truncate text-xs text-slate-500">{u.display_name ?? "표시명 없음"}</p>
+        </div>
+        {u.is_active ? (
+          <span className="shrink-0 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+            활성
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full border border-red-500/35 bg-red-500/15 px-2.5 py-1 text-[11px] font-medium text-red-200">
+            비활성
+          </span>
+        )}
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
+        <div>
+          <dt className="text-slate-600">역할</dt>
+          <dd className="font-medium text-slate-300">{ROLE_KO[u.role] ?? u.role}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-600">LV</dt>
+          <dd className="font-mono text-slate-300">{u.role === "player" ? (u.member_level ?? 1) : "—"}</dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="text-slate-600">{uplineLabel}</dt>
+          <dd className="truncate font-mono text-xs text-premium/90">{u.referrer_login_id ?? "—"}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-600">게임머니</dt>
+          <dd className="text-right font-mono tabular-nums text-slate-100">{fmtMoney(u.game_money_balance)}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-600">롤링</dt>
+          <dd className="text-right font-mono tabular-nums text-slate-400">{fmtMoney(u.rolling_point_balance)}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 flex justify-center border-t border-slate-800/80 pt-4">
+        {token && base ? (
+          <MemberWalletRowSwitch row={u} token={token} base={base} canPatch={canPatchMemberWalletFlag} />
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {canCredit ? (
+          <button
+            type="button"
+            onClick={() => setWallet({ userId: u.id, loginId: u.login_id, mode: "credit" })}
+            className="flex min-h-[48px] w-full items-center justify-center rounded-xl text-sm font-semibold text-white shadow-md active:scale-[0.99]"
+            style={{ background: "linear-gradient(135deg, #22c55e, #15803d)" }}
+          >
+            지급
+          </button>
+        ) : (
+          <div className="flex min-h-[48px] w-full items-center justify-center rounded-xl border border-slate-800 bg-slate-900/50 text-xs text-slate-600">
+            지급 불가
+          </div>
+        )}
+        {canDebit ? (
+          <button
+            type="button"
+            onClick={() => setWallet({ userId: u.id, loginId: u.login_id, mode: "debit" })}
+            className="flex min-h-[48px] w-full items-center justify-center rounded-xl text-sm font-semibold text-white shadow-md active:scale-[0.99]"
+            style={{ background: "linear-gradient(135deg, #f87171, #b91c1c)" }}
+          >
+            회수
+          </button>
+        ) : (
+          <div className="flex min-h-[48px] w-full items-center justify-center rounded-xl border border-slate-800 bg-slate-900/50 text-xs text-slate-600">
+            회수 불가
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Link
+          href={`/members/${u.id}`}
+          className="flex min-h-[44px] w-full items-center justify-center rounded-xl border border-sky-500/35 bg-sky-500/10 text-sm font-medium text-sky-200 active:bg-sky-500/20"
+        >
+          상세정보
+        </Link>
+        <Link
+          href={`/members/${u.id}/bet-limits`}
+          className="flex min-h-[44px] w-full items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm font-medium text-amber-100 active:bg-amber-500/20"
+        >
+          한도 설정
+        </Link>
+      </div>
+    </article>
+  );
+}
+
 type Props = {
   title: string;
   subtitle?: string;
@@ -248,7 +364,8 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
       )}
 
       {!query.isLoading && items.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/40">
+        <>
+        <div className="hidden overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/40 md:block">
           <table className="min-w-[1040px] w-full text-left text-xs text-slate-300">
             <thead className="border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
@@ -352,6 +469,21 @@ export function MembersListClient({ title, subtitle, initialIsActive, variant = 
             </tbody>
           </table>
         </div>
+
+        <div className="space-y-3 md:hidden">
+          {items.map((u) => (
+            <MemberRowMobile
+              key={u.id}
+              u={u}
+              token={token ?? ""}
+              base={base ?? ""}
+              canPatchMemberWalletFlag={canPatchMemberWalletFlag}
+              uplineLabel={uplineLabel}
+              setWallet={setWallet}
+            />
+          ))}
+        </div>
+        </>
       )}
 
       {wallet && token ? (

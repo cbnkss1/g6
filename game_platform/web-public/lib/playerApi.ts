@@ -178,12 +178,35 @@ export async function playerCreateCashRequest(
   return data as CashRequestPublic;
 }
 
+export async function playerDeleteCashRequest(token: string, requestId: number): Promise<{ ok: boolean }> {
+  const r = await fetch(`${base()}/api/player/cash/requests/${requestId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { ok: boolean };
+}
+
+export async function playerDeleteAllCashRequests(token: string): Promise<{ deleted_count: number }> {
+  const r = await fetch(`${base()}/api/player/cash/requests/delete-all`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { deleted_count: number };
+}
+
 export type PlayerNotificationItem = {
   id: number;
   title: string;
   body: string;
   read_at: string | null;
   created_at: string | null;
+  is_important?: boolean;
 };
 
 /** 관리자가 보낸 쪽지(알림) 목록 */
@@ -208,6 +231,39 @@ export async function playerMarkNotificationRead(token: string, notificationId: 
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) throw new Error(readErr(r, data));
+}
+
+export async function playerNotificationBlockStatus(
+  token: string,
+): Promise<{ blocked: boolean; unread_important_count: number }> {
+  const r = await fetch(`${base()}/api/player/notifications/block-status`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { blocked: boolean; unread_important_count: number };
+}
+
+export async function playerDeleteNotification(token: string, notificationId: number): Promise<void> {
+  const r = await fetch(`${base()}/api/player/notifications/${notificationId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+}
+
+export async function playerDeleteAllNotifications(token: string): Promise<{ updated: number }> {
+  const r = await fetch(`${base()}/api/player/notifications/delete-all`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { updated: number };
 }
 
 export type LedgerEntryPublic = {
@@ -364,4 +420,26 @@ export async function playerSupportCreateTicket(
   const data = await r.json().catch(() => null);
   if (!r.ok) throw new Error(readErr(r, data));
   return data as SupportTicketPublic;
+}
+
+export async function playerSupportDeleteTicket(token: string, ticketId: number): Promise<{ ok: boolean }> {
+  const r = await fetch(`${base()}/api/player/support/tickets/${ticketId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { ok: boolean };
+}
+
+export async function playerSupportDeleteAllTickets(token: string): Promise<{ deleted_count: number }> {
+  const r = await fetch(`${base()}/api/player/support/tickets/delete-all`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(readErr(r, data));
+  return data as { deleted_count: number };
 }

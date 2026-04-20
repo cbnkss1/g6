@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.dependencies.auth_jwt import require_admin_user
 from app.dependencies.data_scope import assert_viewer_may_access_target_user
 from app.models.player_notification import PlayerNotification
 from app.models.user import User
+from app.websockets.player_events import notify_player_memo, notify_player_memos_batch
 
 router = APIRouter()
 
@@ -24,6 +25,10 @@ class SendPlayerNotificationBody(BaseModel):
     login_id: str = Field(..., min_length=1, max_length=64)
     title: str = Field(..., min_length=1, max_length=200)
     body: str = Field(..., min_length=1, max_length=20000)
+    is_important: bool = Field(
+        default=False,
+        description="중요: 플레이어가 읽기 전까지 스포츠·카지노·슬롯·미니게임 진입이 차단됩니다.",
+    )
 
 
 class SendBroadcastPlayerNotificationBody(BaseModel):
@@ -31,6 +36,7 @@ class SendBroadcastPlayerNotificationBody(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=200)
     body: str = Field(..., min_length=1, max_length=20000)
+    is_important: bool = Field(default=False, description="중요 쪽지(미열람 시 게임 진입 차단)")
     site_id: Optional[str] = Field(
         None,
         description="총판(super_admin)만 지정 가능. 비우면 본인 소속 사이트.",
@@ -40,6 +46,7 @@ class SendBroadcastPlayerNotificationBody(BaseModel):
 @router.post("/player-notifications/send", summary="회원에게 쪽지(알림) 발송")
 def admin_send_player_notification(
     body: SendPlayerNotificationBody,
+    background_tasks: BackgroundTasks,
     viewer: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -56,10 +63,18 @@ def admin_send_player_notification(
         title=body.title.strip(),
         body=body.body.strip(),
         sender_admin_id=viewer.id,
+        is_important=bool(body.is_important),
     )
     db.add(row)
     db.commit()
     db.refresh(row)
+    background_tasks.add_task(
+        notify_player_memo,
+        target.id,
+        row.id,
+        row.title.strip(),
+        bool(row.is_important),
+    )
     return {
         "ok": True,
         "id": row.id,
@@ -71,6 +86,7 @@ def admin_send_player_notification(
 @router.post("/player-notifications/send-broadcast", summary="사이트 전체 플레이어에게 쪽지 일괄 발송")
 def admin_send_broadcast_player_notifications(
     body: SendBroadcastPlayerNotificationBody,
+    background_tasks: BackgroundTasks,
     viewer: User = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -99,11 +115,15 @@ def admin_send_broadcast_player_notifications(
             title=body.title.strip(),
             body=body.body.strip(),
             sender_admin_id=viewer.id,
+            is_important=bool(body.is_important),
         )
         for uid in user_ids
     ]
     db.add_all(batch)
+    db.flush()
+    items = [(r.user_id, r.id, r.title, bool(r.is_important)) for r in batch]
     db.commit()
+    background_tasks.add_task(notify_player_memos_batch, items)
     return {"ok": True, "sent": len(batch), "site_id": str(target_site)}
 
 
@@ -130,6 +150,7 @@ def admin_outbox_player_notifications(
                 "title": n.title,
                 "body_preview": (n.body[:120] + "…") if len(n.body) > 120 else n.body,
                 "created_at": n.created_at.isoformat() if n.created_at else None,
+                "is_important": bool(n.is_important),
             }
         )
     return {"items": items}

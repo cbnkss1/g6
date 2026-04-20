@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any, Dict, Tuple
 
 import httpx
@@ -37,6 +38,20 @@ def plxmed_post_sync(path: str, payload: dict, *, timeout: float = 25.0) -> dict
         raise RuntimeError(f"Plxmed non-JSON response HTTP {r.status_code}") from None
 
 
+def plxmed_local_credentials(login_id: str, user_id: int | None) -> tuple[str, str]:
+    """
+    Plxmed createaccount 용 username / password.
+    문서상 username·password 는 영문 소문자+숫자 위주 — 한글 login_id 를 그대로 쓰면
+    비밀번호에 비ASCII가 섞여 토큰은 나와도 getGameUrl 1010 이 날 수 있음.
+    비(영소문자+숫자) login_id 는 회원 PK 기반 ASCII 계정으로 고정한다.
+    """
+    uid = int(user_id) if user_id is not None else 0
+    lid = (login_id or "u").strip().lower()
+    if re.fullmatch(r"[a-z0-9]+", lid):
+        return (f"sp_{lid}", f"sp{lid}pw")
+    return (f"sp_uid_{uid}", f"spuid{uid}pw")
+
+
 def plxmed_success(data: dict) -> bool:
     """createaccount / addmemberpoint 등 공통 성공 판별."""
     if not isinstance(data, dict):
@@ -55,16 +70,28 @@ def plxmed_success(data: dict) -> bool:
     return False
 
 
-def plxmed_createaccount_usercode_token(login_id: str, email: str | None) -> Tuple[str, str]:
+def plxmed_createaccount_usercode_token(
+    login_id: str,
+    email: str | None,
+    *,
+    user_id: int | None = None,
+) -> Tuple[str, str]:
     """회원 login_id 기준 Plxmed 계정 — launch 엔드포인트와 동일 자격증명."""
-    username = f"sp_{login_id}"
-    password = f"sp{login_id}pw"
+    username, password = plxmed_local_credentials(login_id, user_id)
+    _lid = (login_id or "u").strip()
+    _fn = _lid if re.fullmatch(r"[A-Za-z]+", _lid) else (f"u{user_id}" if user_id is not None else "player")
+    if user_id is not None:
+        mobile_no = 1000000000 + int(user_id)
+    else:
+        h12 = hashlib.md5(login_id.encode("utf-8")).hexdigest()[:12]
+        mobile_no = 1000000000 + (int(h12, 16) % 900000000)
     acc_payload = {
         "username": username,
         "password": password,
         "email": email or f"{login_id}@player.local",
-        "first_name": login_id,
+        "first_name": _fn[:64],
         "last_name": "",
+        "mobile_no": mobile_no,
     }
     acc_data = plxmed_post_sync("/createaccount", acc_payload)
     if not plxmed_success(acc_data):

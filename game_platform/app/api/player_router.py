@@ -463,6 +463,81 @@ def player_list_cash_requests(
     return {"items": [cash_request_to_dict(r) for r in rows]}
 
 
+# 플레이어가 본인 목록에서 지울 수 없는 상태(담당 처리 중만 보호). 승인·거절·대기는 내역 정리용 삭제 허용.
+_PLAYER_CASH_DELETE_BLOCKED_STATUSES = frozenset({"PROCESSING"})
+
+
+@router.delete("/cash/requests/{request_id}", summary="내 입출금 신청 삭제 (처리중 제외)")
+async def player_delete_cash_request(
+    request_id: int,
+    request: Request,
+    user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    if user.role != USER_ROLE_PLAYER:
+        raise HTTPException(status_code=403, detail="플레이어 전용입니다.")
+    row = db.get(CashRequest, request_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="신청 내역을 찾을 수 없습니다.")
+    if row.status in _PLAYER_CASH_DELETE_BLOCKED_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="처리 중인 신청은 삭제할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        )
+    db.delete(row)
+    AuditService.log(
+        db,
+        actor=user,
+        action="PLAYER_CASH_REQUEST_DELETE",
+        target_type="CASH_REQUEST",
+        target_id=str(request_id),
+        before={"status": row.status, "amount": str(row.amount)},
+        after={},
+        actor_ip=request.client.host if request.client else None,
+    )
+    db.commit()
+    await admin_ws_manager.broadcast_event("dashboard_refresh", {})
+    return {"ok": True, "deleted_id": request_id}
+
+
+@router.post("/cash/requests/delete-all", summary="내 입출금 신청 전체 삭제 (처리중 제외)")
+async def player_delete_all_cash_requests(
+    request: Request,
+    user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+) -> dict:
+    if user.role != USER_ROLE_PLAYER:
+        raise HTTPException(status_code=403, detail="플레이어 전용입니다.")
+    blocked = tuple(_PLAYER_CASH_DELETE_BLOCKED_STATUSES)
+    rows = list(
+        db.scalars(
+            select(CashRequest).where(
+                CashRequest.user_id == user.id,
+                CashRequest.status.notin_(blocked),
+            )
+        ).all()
+    )
+    n = 0
+    for row in rows:
+        db.delete(row)
+        n += 1
+    if n:
+        AuditService.log(
+            db,
+            actor=user,
+            action="PLAYER_CASH_REQUEST_DELETE_ALL",
+            target_type="CASH_REQUEST",
+            target_id="*",
+            before={"count": n},
+            after={},
+            actor_ip=request.client.host if request.client else None,
+        )
+    db.commit()
+    if n:
+        await admin_ws_manager.broadcast_event("dashboard_refresh", {})
+    return {"ok": True, "deleted_count": n}
+
+
 @router.post("/cash/requests", summary="입금·출금 신청 (본인)")
 async def player_create_cash_request(
     body: PlayerCashRequestBody,
@@ -532,6 +607,7 @@ async def player_create_cash_request(
             "request_type": rtype,
             "amount": body.amount,
             "user_id": user.id,
+            "login_id": user.login_id,
             "source": "player",
         },
     )

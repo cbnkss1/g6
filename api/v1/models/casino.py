@@ -4,8 +4,8 @@ Plxmed Casino API 요청/응답 Pydantic 모델.
 스키마는 에이전트 패널(https://bpcl.plxmed.com) 로그인 후 «API 문서»·PLEXApi 페이지와 대조.
 REST 베이스는 game_platform 설정 PLXMED_API_BASE(예: …/api/v1/plexApi).
 """
-from typing import Any, Literal, Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Any, Literal, Optional, Union
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 import re
 
 
@@ -181,6 +181,9 @@ class GetGameUrlResponse(CasinoBaseResponse):
 
 class CallbackDataItem(BaseModel):
     """콜백 data 배열 내 개별 베팅 세부정보."""
+
+    model_config = ConfigDict(extra="ignore")
+
     ext_transaction_id: Optional[str] = Field(None, description="게임사 측 고유 거래 ID")
     transaction_id: Optional[str] = Field(None, description="베팅/당첨/환불 고유 거래 ID")
     round_id: Optional[str] = Field(None, description="게임 라운드 고유 ID")
@@ -189,7 +192,7 @@ class CallbackDataItem(BaseModel):
     username: Optional[str] = Field(None, description="유저 고유 이름")
     provider_id: Optional[str] = Field(None, description="공급자 고유 ID")
     provider_name: Optional[str] = Field(None, description="게임사 이름")
-    game_id: Optional[str] = Field(None, description="게임사 게임 목록 ID")
+    game_id: Optional[Union[str, int]] = Field(None, description="게임사 게임 목록 ID")
     game_code: Optional[str] = Field(None, description="공급자 고유 게임 ID")
     transaction_type: Optional[str] = Field(
         None, description="트랜잭션 유형: BET / WIN / DEP / WITH"
@@ -198,11 +201,35 @@ class CallbackDataItem(BaseModel):
         None, description="실행 단계: DEBIT / CREDIT / ROLLBACK / ROLLIN / ROLLOUT / ENDROUND"
     )
     previous_balance: Optional[str] = Field(None, description="충전전 이전 잔고")
-    transaction_amount: Optional[int] = Field(None, description="트랜잭션 금액")
+    # Plxmed/에볼 등은 문자열·소수로 보낼 수 있음 — int 고정이면 422
+    transaction_amount: Optional[float] = Field(None, description="트랜잭션 금액")
     available_balance: Optional[str] = Field(None, description="충전 이후의 실제 잔액")
     created_date: Optional[str] = Field(None, description="거래 생성 날짜")
     game_details: Optional[Any] = Field(None, description="전체 게임 세부정보")
     seq_transaction_id: Optional[str] = Field(None, description="게임사 고유 시퀀스 트랜잭션 ID")
+
+    @field_validator("transaction_amount", mode="before")
+    @classmethod
+    def _coerce_transaction_amount(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return None
+        if isinstance(v, bool):
+            return float(int(v))
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            return float(str(v).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    @field_validator("game_id", mode="before")
+    @classmethod
+    def _coerce_game_id(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return str(v)
+        return v
 
 
 class CasinoCallbackRequest(BaseModel):
@@ -211,10 +238,23 @@ class CasinoCallbackRequest(BaseModel):
 
     우리 서버는 처리 후 반드시 {"res_status": "success", "res_message": "success"} 를 반환해야 함.
     """
-    usercode: str = Field(..., description="사용자 고유 코드 (플렉스 미디어 서버 저장)")
+    model_config = ConfigDict(extra="allow")
+
+    usercode: Optional[str] = Field(None, description="사용자 고유 코드 (상위 또는 data 행에 있을 수 있음)")
     available_balance: Optional[str] = Field(None, description="유저의 현재 잔고")
     time: Optional[str] = Field(None, description="트랜잭션 날짜와 시간")
     data: Optional[list[CallbackDataItem]] = Field(None, description="베팅 세부정보 배열")
+    hash: Optional[str] = Field(None, description="MD5 서명 (페이로드+SECURITY_KEY)")
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def _normalize_data_list(cls, v: Any) -> Any:
+        """일부 버전은 data 를 객체 한 건만 보냄 → 리스트로 통일."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return [v]
+        return v
 
 
 class CasinoCallbackResponse(BaseModel):

@@ -48,6 +48,7 @@ class SettlementService:
         external_bet_uid: str,
         game_result: GameResult,
         win_amount: Decimal,
+        wallet_neutral: bool = False,
     ) -> SettlementResult:
         """
         외부 API에서 결과가 온 직후 호출.
@@ -87,7 +88,7 @@ class SettlementService:
         result_str = game_result.value
         valid_stake = valid_bet_amount_for_rolling(bet.bet_amount, result_str)
 
-        if win_amount != 0:
+        if not wallet_neutral and win_amount != 0:
             new_bal = user.game_money_balance + win_amount
             user.game_money_balance = new_bal
             db.add(
@@ -119,11 +120,12 @@ class SettlementService:
         bet.game_result = result_str
         bet.settled_at = datetime.now(timezone.utc)
 
+        credited = Decimal("0") if wallet_neutral else win_amount
         return SettlementResult(
             ok=True,
             already_settled=False,
             bet_id=bet.id,
-            game_money_credited=win_amount,
+            game_money_credited=credited,
             rolling_credited_to_referrer=diff.total_rolling_points,
             valid_bet_for_rolling=valid_stake,
             detail="settled",

@@ -5,7 +5,7 @@ import { publicAdminWsUrl } from "@/lib/publicApiBase";
 import { useDashboardLiveStore } from "@/store/useDashboardLiveStore";
 import { useAuthStore } from "@/store/useAuthStore";
 
-type WsMsg = {
+export type WsMsg = {
   type?: string;
   payload?: Record<string, string | number | string[] | undefined | null>;
 };

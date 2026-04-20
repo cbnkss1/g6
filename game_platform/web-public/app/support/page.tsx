@@ -63,7 +63,35 @@ export default function SupportPage() {
             <p className="text-[10px] font-bold uppercase tracking-widest text-quantum-magenta/90">
               Quick Link
             </p>
-            <div className="mt-3 flex flex-col gap-2 text-sm">
+            <div className="mt-3 flex flex-col gap-2.5 text-sm">
+              <Link
+                href="/messages"
+                className="group relative overflow-hidden rounded-xl border border-amber-400/45 bg-gradient-to-br from-amber-500/[0.18] via-amber-600/[0.08] to-rose-900/20 px-4 py-3 text-center font-semibold text-amber-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_36px_rgba(245,158,11,0.18)] transition hover:border-amber-300/60 hover:shadow-[0_0_40px_rgba(251,191,36,0.22)]"
+              >
+                <span className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-400/20 blur-2xl transition group-hover:bg-amber-300/25" />
+                <span className="relative flex flex-col items-center gap-1">
+                  <span className="flex items-center gap-2 text-[15px] tracking-tight">
+                    <svg
+                      className="h-5 w-5 text-amber-200/95"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.6}
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      />
+                    </svg>
+                    쪽지함
+                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-amber-200/75">
+                    관리자 알림 · 공지
+                  </span>
+                </span>
+              </Link>
               <Link
                 href="/wallet"
                 className="rounded-lg border border-quantum-cyan/35 bg-quantum-cyan/10 px-3 py-2 text-center text-quantum-cyan hover:bg-quantum-cyan/20"

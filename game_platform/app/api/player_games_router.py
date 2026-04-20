@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import re
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -22,11 +25,13 @@ from app.services.sports_bet_history_bridge import create_bet_history_for_sports
 from app.services.bet_limit_service import effective_limits
 from app.services.player_presence import touch_player_presence
 from app.services.sports_betting_time import match_kickoff_has_passed, utc_now
+
 from app.services.casino_wallet_service import (
     get_casino_wallet_status,
     transfer_casino_to_main,
     transfer_main_to_casino,
 )
+from app.services.plxmed_client import plxmed_local_credentials
 from app.services.game_provider_policy import (
     assert_launch_allowed,
     filter_catalog_provider_rows,
@@ -43,6 +48,8 @@ from app.services.powerball_service import (
     powerball_games_catalog,
     validate_pick_string,
 )
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -606,56 +613,133 @@ async def player_casino_launch(
     pk = (body.provider_key or "").strip() or None
     assert_launch_allowed(site, kind=gk, catalog_key=pk)
 
-    username = f"sp_{user.login_id}"
-    password = f"sp{user.login_id}pw"
-    email = getattr(user, "email", None) or f"{user.login_id}@player.local"
+    username, password = plxmed_local_credentials(user.login_id or "", user.id)
+    email = getattr(user, "email", None) or f"u{user.id}@player.local"
     base = _s.PLXMED_API_BASE.rstrip("/")
 
     async with _httpx.AsyncClient(timeout=15.0) as http:
         # 1) createaccount (이미 존재하면 로그인처럼 동작)
+        # Plxmed 문서: mobile_no 필수. 누락 시 토큰은 나와도 getGameUrl 1010(User token modification failed) 발생 가능.
+        # first_name 은 영문만 — 한글 login_id 는 규격 불일치로 후속 API 실패 가능.
+        _lid = (user.login_id or "u").strip()
+        _fn = _lid if re.fullmatch(r"[A-Za-z]+", _lid) else f"u{user.id}"
         acc_payload = {
             "username": username,
             "password": password,
             "email": email,
-            "first_name": user.login_id,
+            "first_name": _fn[:64],
             "last_name": "",
+            "mobile_no": 1000000000 + int(user.id),
         }
         acc_headers = _build_plxmed_headers(acc_payload)
         acc_resp = await http.post(f"{base}/createaccount", json=acc_payload, headers=acc_headers)
         acc_data = acc_resp.json()
         code = acc_data.get("status") or acc_data.get("code")
         if code not in (None, 0, "0", "success", "SUCCESS", True):
-            raise HTTPException(status_code=502, detail=f"카지노 계정 오류: {acc_data.get('message', code)}")
+            logger.warning(
+                "[casino-launch] createaccount 실패 user_id=%s login_id=%s resp=%s",
+                user.id,
+                user.login_id,
+                str(acc_data)[:900],
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"카지노 계정 오류: {acc_data.get('message', code)}",
+            )
 
         inner = acc_data.get("data") or {}
         usercode = inner.get("usercode", "")
         token = inner.get("token", "")
         if not usercode or not token:
-            raise HTTPException(status_code=502, detail="카지노 계정 정보를 받지 못했습니다.")
+            logger.warning(
+                "[casino-launch] usercode/token 없음 user_id=%s acc_data=%s",
+                user.id,
+                str(acc_data)[:900],
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="카지노 계정 정보를 받지 못했습니다.",
+            )
 
-        # 2) getGameUrl — game 파라미터는 Plxmed 숫자 게임 ID
-        url_payload = {
-            "usercode": usercode,
-            "mode": "real",
-            "game": body.game_id,
-            "lang": body.lang,
-            "token": token,
-            "return_url": body.return_url,
-        }
-        url_headers = _build_plxmed_headers(url_payload)
-        url_resp = await http.post(f"{base}/getGameUrl", json=url_payload, headers=url_headers)
-        url_data = url_resp.json()
-        # Plxmed는 data.return_url 키로 게임 URL 반환
-        data_inner = url_data.get("data") or {}
-        game_url = (
-            data_inner.get("return_url") or
-            data_inner.get("game_url") or
-            data_inner.get("url") or
-            ""
-        )
+        async def _get_game_url(uc: str, tok: str) -> tuple[str, dict[str, Any]]:
+            """Plxmed getGameUrl — 일부 게임사는 토큰 반영 지연이 있어 직전에 짧게 대기."""
+            await asyncio.sleep(0.4)
+            url_payload = {
+                "usercode": uc,
+                "mode": "real",
+                "game": body.game_id,
+                "lang": body.lang,
+                "token": tok,
+                "return_url": body.return_url,
+            }
+            url_headers = _build_plxmed_headers(url_payload)
+            url_resp = await http.post(f"{base}/getGameUrl", json=url_payload, headers=url_headers)
+            udata = url_resp.json()
+            inner = udata.get("data") or {}
+            gurl = (
+                inner.get("return_url")
+                or inner.get("game_url")
+                or inner.get("url")
+                or ""
+            )
+            return (str(gurl).strip(), udata)
+
+        game_url, url_data = await _get_game_url(usercode, token)
+        erc = str(url_data.get("code") or "")
+        # 4016: 연속 런치 최소 1초 — 직전 요청과 겹치면 동일 토큰으로 잠시 후 1회만 재시도
+        if not game_url and erc == "4016":
+            logger.warning(
+                "[casino-launch] getGameUrl 4016 → 2.1s 후 동일 세션 재시도 user_id=%s game_id=%s",
+                user.id,
+                body.game_id,
+            )
+            await asyncio.sleep(2.1)
+            game_url, url_data = await _get_game_url(usercode, token)
+            erc = str(url_data.get("code") or "")
+
+        # 1010(User token modification failed) — 재로그인(동일 createaccount) 후 1회 재시도
+        # Plxmed 4016과 겹치지 않게 이전 getGameUrl 과 충분한 간격(>1s) 확보
+        if not game_url and erc == "1010":
+            logger.warning(
+                "[casino-launch] getGameUrl 1010 → createaccount 재호출 후 재시도 user_id=%s game_id=%s",
+                user.id,
+                body.game_id,
+            )
+            await asyncio.sleep(2.3)
+            acc_resp2 = await http.post(f"{base}/createaccount", json=acc_payload, headers=acc_headers)
+            acc_data2 = acc_resp2.json()
+            code2 = acc_data2.get("status") or acc_data2.get("code")
+            if code2 in (None, 0, "0", "success", "SUCCESS", True):
+                inner2 = acc_data2.get("data") or {}
+                uc2 = inner2.get("usercode", "")
+                tok2 = inner2.get("token", "")
+                if uc2 and tok2:
+                    usercode, token = uc2, tok2
+                    await asyncio.sleep(1.0)
+                    game_url, url_data = await _get_game_url(usercode, token)
+
         if not game_url:
             err_msg = url_data.get("message", "알 수 없는 오류")
-            raise HTTPException(status_code=502, detail=f"게임 URL 오류: {err_msg}")
+            err_code = str(url_data.get("code") or "")
+            logger.warning(
+                "[casino-launch] getGameUrl 빈 URL user_id=%s game_id=%s resp=%s",
+                user.id,
+                body.game_id,
+                str(url_data)[:900],
+            )
+            if err_code == "4016" or "delay between" in str(err_msg).lower():
+                detail = (
+                    "게임 실행이 너무 빠르게 연속되었습니다. 2~3초 뒤 다시 눌러 주세요. "
+                    "(다른 게임을 막 열었다 닫은 직후에도 같은 안내가 나올 수 있습니다.)"
+                )
+            else:
+                detail = f"게임 URL 오류: {err_msg}"
+                if err_code == "1010" or "token modification" in str(err_msg).lower():
+                    detail += (
+                        " — Plxmed 카지노 지갑 잔액이 없거나 해당 게임사(Sexy 등)가 에이전트에 미배정일 수 있습니다. "
+                        "먼저 지갑에서 게임머니를 카지노로 이전한 뒤 재시도하거나 Plxmed BCP에서 게임사 배정을 확인하세요."
+                    )
+            raise HTTPException(status_code=422, detail=detail)
 
         # Evolution: /entry URL로 GET 요청 → EVOSESSIONID 쿠키 받아서 로비 URL 반환
         if "evo-games.com/entry" in game_url:

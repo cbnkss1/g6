@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
 
 from app.constants import USER_ROLE_PLAYER
@@ -15,16 +15,14 @@ from app.models.bet import BetHistory
 from app.models.support_ticket import SupportTicket
 from app.models.user import User
 from app.websockets.manager import admin_ws_manager
+from app.websockets.ops_events import broadcast_support_ticket_new
 
 router = APIRouter()
 
 
-async def _broadcast_new_support_ticket(ticket_id: int) -> None:
-    await admin_ws_manager.broadcast_event(
-        "support_ticket_new",
-        {"id": ticket_id, "source": "player"},
-    )
+async def _broadcast_support_dashboard_refresh() -> None:
     await admin_ws_manager.broadcast_event("dashboard_refresh", {})
+
 
 SUPPORT_CATEGORY_KEYS = frozenset(
     {"CHARGE", "WITHDRAW", "GAME_VOID", "EVENT", "OTHER"}
@@ -96,6 +94,37 @@ def player_list_support_tickets(
     }
 
 
+@router.delete("/support/tickets/{ticket_id}", summary="내 1:1 문의 삭제 (본인)")
+async def player_delete_support_ticket(
+    ticket_id: int,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    _require_player(user)
+    row = db.get(SupportTicket, ticket_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="문의를 찾을 수 없습니다.")
+    db.delete(row)
+    db.commit()
+    background_tasks.add_task(_broadcast_support_dashboard_refresh)
+    return {"ok": True, "deleted_id": ticket_id}
+
+
+@router.post("/support/tickets/delete-all", summary="내 1:1 문의 전체 삭제")
+async def player_delete_all_support_tickets(
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    _require_player(user)
+    res = db.execute(delete(SupportTicket).where(SupportTicket.user_id == user.id))
+    db.commit()
+    n = int(res.rowcount or 0)
+    background_tasks.add_task(_broadcast_support_dashboard_refresh)
+    return {"ok": True, "deleted_count": n}
+
+
 @router.post("/support/tickets", summary="1:1 문의 작성", status_code=201)
 def player_create_support_ticket(
     body: SupportTicketCreateBody,
@@ -142,7 +171,7 @@ def player_create_support_ticket(
     db.add(row)
     db.commit()
     db.refresh(row)
-    background_tasks.add_task(_broadcast_new_support_ticket, row.id)
+    background_tasks.add_task(broadcast_support_ticket_new, row.id)
     return _ticket_public(row)
 
 

@@ -50,6 +50,12 @@ export function SiteHeader() {
             >
               카지노 전환
             </Link>
+            <Link
+              href="/messages"
+              className="rounded-lg border border-amber-500/25 bg-amber-500/[0.08] px-2.5 py-1.5 text-xs font-medium text-amber-200/95 hover:border-amber-400/45 hover:bg-amber-500/15 sm:text-sm"
+            >
+              쪽지함
+            </Link>
             {supportUrl && (
               <a href={supportUrl} target="_blank" rel="noopener noreferrer" className={extLink}>
                 고객센터
@@ -57,7 +63,7 @@ export function SiteHeader() {
             )}
             {memoUrl && (
               <a href={memoUrl} target="_blank" rel="noopener noreferrer" className={extLink}>
-                쪽지
+                쪽지(외부)
               </a>
             )}
             {adminUrl && (
@@ -135,6 +141,12 @@ export function SiteHeader() {
               >
                 카지노
               </Link>
+              <Link
+                href="/messages"
+                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] font-medium text-amber-200/90 hover:border-amber-400/45 md:hidden"
+              >
+                쪽지함
+              </Link>
               {supportUrl && (
                 <a
                   href={supportUrl}
@@ -152,7 +164,7 @@ export function SiteHeader() {
                   rel="noopener noreferrer"
                   className="rounded-lg border border-white/10 px-2 py-1.5 text-xs text-slate-400 hover:text-quantum-cyan md:hidden"
                 >
-                  쪽지
+                  외부쪽지
                 </a>
               )}
               <button

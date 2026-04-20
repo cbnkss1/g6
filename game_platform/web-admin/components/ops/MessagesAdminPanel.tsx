@@ -11,6 +11,7 @@ type OutboxRow = {
   title: string;
   body_preview: string;
   created_at: string | null;
+  is_important?: boolean;
 };
 
 export function MessagesAdminPanel() {
@@ -21,6 +22,7 @@ export function MessagesAdminPanel() {
   const [loginId, setLoginId] = useState("");
   const [msgTitle, setMsgTitle] = useState("");
   const [msgBody, setMsgBody] = useState("");
+  const [msgImportant, setMsgImportant] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
   const [sendOk, setSendOk] = useState<string | null>(null);
@@ -28,6 +30,7 @@ export function MessagesAdminPanel() {
 
   const [bcTitle, setBcTitle] = useState("");
   const [bcBody, setBcBody] = useState("");
+  const [bcImportant, setBcImportant] = useState(false);
   const [bcSiteId, setBcSiteId] = useState("");
   const [bcConfirm, setBcConfirm] = useState(false);
   const [bcBusy, setBcBusy] = useState(false);
@@ -65,6 +68,7 @@ export function MessagesAdminPanel() {
           login_id: loginId.trim(),
           title: msgTitle.trim(),
           body: msgBody.trim(),
+          is_important: msgImportant,
         }),
       });
       const raw = await r.text();
@@ -72,6 +76,7 @@ export function MessagesAdminPanel() {
       setSendOk("발송했습니다. 플레이어 쪽지함에서 확인할 수 있습니다.");
       setMsgTitle("");
       setMsgBody("");
+      setMsgImportant(false);
       void loadOutbox();
     } catch (err) {
       setSendErr(err instanceof Error ? err.message : "실패");
@@ -91,9 +96,10 @@ export function MessagesAdminPanel() {
     if (!base || !token) return;
     setBcBusy(true);
     try {
-      const payload: Record<string, string> = {
+      const payload: Record<string, string | boolean> = {
         title: bcTitle.trim(),
         body: bcBody.trim(),
+        is_important: bcImportant,
       };
       if (isSuper && bcSiteId.trim()) payload.site_id = bcSiteId.trim();
       const r = await adminFetch(`${base}/admin/player-notifications/send-broadcast`, {
@@ -112,6 +118,7 @@ export function MessagesAdminPanel() {
       setBcOk(`일괄 발송 완료: ${sent}명에게 전달되었습니다.`);
       setBcTitle("");
       setBcBody("");
+      setBcImportant(false);
       setBcConfirm(false);
       void loadOutbox();
     } catch (err) {
@@ -128,7 +135,9 @@ export function MessagesAdminPanel() {
           <h3 className="text-base font-semibold text-slate-100">개별 회원에게 보내기</h3>
           <p className="mt-1 text-sm text-slate-500">
             플레이어 로그인 ID 한 명을 지정해 쪽지를 보냅니다. 플레이어 웹{" "}
-            <span className="font-mono text-sky-300/90">/messages</span>에서 확인합니다.
+            <span className="font-mono text-sky-300/90">/messages</span>에서 확인합니다.{" "}
+            <span className="text-amber-200/85">중요 쪽지</span>는 읽기 전까지 스포츠·카지노·슬롯·미니게임 진입이
+            차단됩니다.
           </p>
         </div>
         <form onSubmit={onSendMessage} className="grid max-w-xl gap-3">
@@ -162,6 +171,18 @@ export function MessagesAdminPanel() {
               className="quantum-input mt-1.5 min-h-[120px] resize-y"
               required
             />
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-400">
+            <input
+              type="checkbox"
+              checked={msgImportant}
+              onChange={(e) => setMsgImportant(e.target.checked)}
+              className="mt-1 rounded border-slate-600"
+            />
+            <span>
+              <strong className="text-amber-200/90">중요 쪽지</strong> — 미열람 시 해당 회원은 게임(배당·카지노·슬롯·미니) 화면
+              진입 불가
+            </span>
           </label>
           {sendErr ? <p className="text-sm text-rose-400">{sendErr}</p> : null}
           {sendOk ? <p className="text-sm text-emerald-400">{sendOk}</p> : null}
@@ -219,6 +240,17 @@ export function MessagesAdminPanel() {
           <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-400">
             <input
               type="checkbox"
+              checked={bcImportant}
+              onChange={(e) => setBcImportant(e.target.checked)}
+              className="mt-1 rounded border-slate-600"
+            />
+            <span>
+              <strong className="text-amber-200/90">중요 쪽지</strong>로 일괄 발송 (미열람 회원 게임 진입 차단)
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-400">
+            <input
+              type="checkbox"
               checked={bcConfirm}
               onChange={(e) => setBcConfirm(e.target.checked)}
               className="mt-1 rounded border-slate-600"
@@ -245,13 +277,14 @@ export function MessagesAdminPanel() {
               <tr>
                 <th className="p-3">시각</th>
                 <th className="p-3">받는 사람</th>
+                <th className="p-3">구분</th>
                 <th className="p-3">제목</th>
               </tr>
             </thead>
             <tbody>
               {outbox.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="p-8 text-center text-slate-600">
+                  <td colSpan={4} className="p-8 text-center text-slate-600">
                     최근 발송 내역이 없습니다.
                   </td>
                 </tr>
@@ -260,6 +293,15 @@ export function MessagesAdminPanel() {
                   <tr key={o.id} className="border-b border-slate-700/50">
                     <td className="p-3 font-mono text-xs text-slate-500">{o.created_at?.slice(0, 16) ?? "—"}</td>
                     <td className="p-3 font-medium text-sky-300/90">{o.to_login_id}</td>
+                    <td className="p-3">
+                      {o.is_important ? (
+                        <span className="rounded border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-200/95">
+                          중요
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">일반</span>
+                      )}
+                    </td>
                     <td className="p-3 text-slate-300">{o.title}</td>
                   </tr>
                 ))

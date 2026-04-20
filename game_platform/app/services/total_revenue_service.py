@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session
 
+from app.constants import USER_ROLE_SUPER_ADMIN
 from app.models.bet import BetHistory
 from app.models.cash_request import CashRequest
 from app.models.enums import BetStatus, RollingPointLedgerReason
@@ -368,6 +369,19 @@ def _row_to_totals_decimals(row: Dict[str, Any]) -> Dict[str, Decimal]:
     return out
 
 
+def _aggregate_totals_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
+    """직속 하부 행만 있을 때 하단 합계용 (슈퍼어드민 본인 합산 행 제외)."""
+    if not rows:
+        z = Decimal("0").quantize(Q)
+        return {k: str(z) for k in _row_to_totals_decimals({"deposit_sum": "0"}).keys()}
+    acc = _row_to_totals_decimals(rows[0])
+    for row in rows[1:]:
+        part = _row_to_totals_decimals(row)
+        for k in acc:
+            acc[k] = (acc[k] + part[k]).quantize(Q)
+    return {k: str(v) for k, v in acc.items()}
+
+
 def get_total_revenue_table(
     db: Session,
     *,
@@ -421,22 +435,27 @@ def get_total_revenue_table(
 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="parent not found")
 
-    # 1) 선택 상위 기준: 본인 + 전체 하부 (직추천 0명이어도 본인 실적 표시)
-    full_ids = tuple(downward_subtree_user_ids(db, parent_id))
-    full_row = _build_revenue_row(
-        db,
-        partner_user=parent,
-        ids_sub=full_ids,
-        t0=t0,
-        t1=t1,
-        gt=gt,
-        has_children=len(children) > 0,
-        row_scope="full_subtree",
-    )
-    rows_out.append(full_row)
+    # 슈퍼어드민을 상위로 둔 «본인+하부» 합산 행은 숫자만 커지고 혼선 → 표에서 제외. 직속 하부 행·합계만 반환.
+    hide_parent_full_row = (parent.role or "").strip() == USER_ROLE_SUPER_ADMIN
 
-    totals_dec = _row_to_totals_decimals(full_row)
-    totals = {k: str(v.quantize(Q)) for k, v in totals_dec.items()}
+    # 1) 선택 상위 기준: 본인 + 전체 하부 (슈퍼어드민 제외 시 생략)
+    if not hide_parent_full_row:
+        full_ids = tuple(downward_subtree_user_ids(db, parent_id))
+        full_row = _build_revenue_row(
+            db,
+            partner_user=parent,
+            ids_sub=full_ids,
+            t0=t0,
+            t1=t1,
+            gt=gt,
+            has_children=len(children) > 0,
+            row_scope="full_subtree",
+        )
+        rows_out.append(full_row)
+        totals_dec = _row_to_totals_decimals(full_row)
+        totals = {k: str(v.quantize(Q)) for k, v in totals_dec.items()}
+    else:
+        totals = _aggregate_totals_from_rows([])
 
     # 2) 직속 하부별 (하위 상위로 전환해 탐색)
     for u in children:
@@ -454,6 +473,10 @@ def get_total_revenue_table(
             rolling_for_recipient_only=True,
         )
         rows_out.append(row)
+
+    if hide_parent_full_row:
+        child_only = [r for r in rows_out if r.get("row_scope") == "direct_child"]
+        totals = _aggregate_totals_from_rows(child_only)
 
     p = parent
     parent_info = {

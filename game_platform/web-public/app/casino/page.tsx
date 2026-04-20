@@ -44,6 +44,8 @@ export default function CasinoPage() {
   const [loadingGames, setLoadingGames] = useState(false);
   const [gameUrl, setGameUrl] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  /** Plxmed 4016: 연속 런치 최소 1초 — 서버·에볼 직후 다른 로비 클릭까지 여유 */
+  const lastLaunchAt = useRef(0);
   const LIMIT = 24;
 
   useEffect(() => {
@@ -145,6 +147,12 @@ export default function CasinoPage() {
       openLogin();
       return;
     }
+    const now = Date.now();
+    if (now - lastLaunchAt.current < 2200) {
+      alert("잠시 후 다시 시도해 주세요. (연속 실행 간격 제한)");
+      return;
+    }
+    lastLaunchAt.current = now;
     const pk = providerTitle ? casinoCatalogKeyFromProviderTitle(providerTitle) : null;
     try {
       const r = await fetch(`/gp-api/api/player/games/casino/launch`, {
@@ -160,13 +168,33 @@ export default function CasinoPage() {
           ...(pk ? { provider_key: pk } : {}),
         }),
       });
+      const raw = await r.text();
+      let d: { url?: string; detail?: string; message?: string } = {};
+      try {
+        d = raw ? (JSON.parse(raw) as typeof d) : {};
+      } catch {
+        const hint = raw.trim().slice(0, 240);
+        alert(
+          `게임 서버 응답을 해석하지 못했습니다. (${r.status})${hint ? `\n${hint}` : ""}\n잠시 후 다시 시도해 주세요.`,
+        );
+        return;
+      }
       if (r.status === 401) {
         openLogin();
         return;
       }
-      const d = await r.json();
       if (r.status === 403) {
         alert(typeof d?.detail === "string" ? d.detail : "이 게임사는 현재 이용할 수 없습니다.");
+        return;
+      }
+      if (!r.ok) {
+        const msg =
+          typeof d?.detail === "string"
+            ? d.detail
+            : typeof d?.message === "string"
+              ? d.message
+              : `오류 ${r.status}`;
+        alert(msg);
         return;
       }
       if (d.url) {

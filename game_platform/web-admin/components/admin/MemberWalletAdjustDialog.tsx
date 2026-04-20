@@ -50,52 +50,55 @@ export function MemberWalletAdjustDialog({ token, userId, loginId, mode, onClose
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.65)" }}
+      className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4"
+      style={{ background: "rgba(2,6,23,0.78)" }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="wallet-adj-title"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border p-6 shadow-2xl"
-        style={{
-          borderColor: "rgba(212,175,55,0.2)",
-          background: "rgba(8,15,28,0.98)",
-        }}
+        className="w-full max-w-md rounded-t-2xl border border-amber-500/25 bg-[rgba(8,15,28,0.98)] p-4 shadow-[0_-12px_48px_rgba(0,0,0,0.55)] sm:rounded-2xl sm:p-6 sm:shadow-2xl"
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="wallet-adj-title" className="text-lg font-semibold text-slate-100">
+        <h2 id="wallet-adj-title" className="text-lg font-semibold text-slate-100 sm:text-xl">
           {title}
         </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          대상: <span className="font-mono text-premium">{loginId}</span> (즉시 반영, 입출금 신청 큐 없음)
+        <p className="mt-2 text-sm leading-relaxed text-slate-400">
+          대상:{" "}
+          <span className="font-mono font-semibold text-amber-200/95">{loginId}</span>
+          <span className="mt-1 block text-[11px] text-slate-500 sm:inline sm:mt-0 sm:before:content-['_']">
+            즉시 반영 · 입출금 신청 큐 없음
+          </span>
         </p>
-        <label className="mt-4 block text-xs text-slate-500">
+        <label className="mt-5 block text-xs font-medium uppercase tracking-wider text-slate-500">
           금액
           <input
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             inputMode="decimal"
-            className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 font-mono text-slate-100"
+            className="admin-touch-input mt-2 w-full min-h-[52px] rounded-xl border border-slate-700 bg-slate-950/90 px-4 text-center text-lg font-mono tabular-nums text-slate-100 outline-none focus:border-amber-500/40"
             placeholder="0"
             autoFocus
           />
         </label>
-        <label className="mt-3 block text-xs text-slate-500">
+        <label className="mt-4 block text-xs font-medium uppercase tracking-wider text-slate-500">
           메모 (선택)
-          <input
+          <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-200"
+            rows={3}
+            className="mt-2 w-full resize-y rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-amber-500/40"
+            placeholder="내용 입력"
           />
         </label>
         {err ? <p className="mt-3 text-sm text-red-400">{err}</p> : null}
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/50"
+            className="min-h-[48px] w-full rounded-xl border border-slate-600 bg-slate-900/80 px-4 text-sm font-medium text-slate-200 hover:bg-slate-800 sm:w-auto sm:min-w-[100px]"
           >
             취소
           </button>
@@ -103,7 +106,7 @@ export function MemberWalletAdjustDialog({ token, userId, loginId, mode, onClose
             type="button"
             disabled={loading || !amount.trim()}
             onClick={() => void submit()}
-            className="rounded-xl px-5 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40"
+            className="min-h-[48px] w-full rounded-xl px-5 text-sm font-semibold text-slate-950 shadow-lg disabled:opacity-40 sm:w-auto sm:min-w-[120px]"
             style={{
               background:
                 mode === "credit"

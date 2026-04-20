@@ -25,3 +25,35 @@ export function publicApiBase(): string {
   if (!v) return "/gp-api";
   return normalizeApiPrefix(v.replace(TRAIL, ""));
 }
+
+/**
+ * 플레이어 실시간 알림 WebSocket (`/api/player/ws`).
+ * 어드민 `/admin/ws` 와 동일하게 Nginx에서 Upgrade 전달이 필요할 수 있음.
+ */
+export function publicPlayerWsUrl(): string {
+  const win = typeof window !== "undefined" ? window : undefined;
+  const host = win?.location.hostname ?? "";
+
+  if (win && slotpassPlayerHost(host)) {
+    const api = process.env.NEXT_PUBLIC_API_URL?.trim();
+    if (api && /^https?:\/\//i.test(api)) {
+      try {
+        const u = new URL(api);
+        const wss = u.protocol === "https:" ? "wss:" : "ws:";
+        return `${wss}//${u.host}/api/player/ws`;
+      } catch {
+        /* fall through */
+      }
+    }
+    const proto = win.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${win.location.host}/gp-api/api/player/ws`;
+  }
+
+  const env = process.env.NEXT_PUBLIC_PLAYER_WS_URL?.trim();
+  if (env) return env.replace(TRAIL, "");
+  if (win) {
+    const proto = win.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${win.location.host}/gp-api/api/player/ws`;
+  }
+  return "ws://127.0.0.1:8100/api/player/ws";
+}

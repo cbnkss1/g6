@@ -31,25 +31,27 @@ class BetPlacementService:
         external_bet_uid: str,
         game_type: str,
         stake: Decimal,
+        wallet_neutral: bool = False,
     ) -> PlaceBetResult:
         stake = Decimal(stake).quantize(Decimal("0.000001"))
         user = db.scalars(select(User).where(User.id == user_id).with_for_update()).one()
 
-        if user.game_money_balance < stake:
-            return PlaceBetResult(ok=False, bet_id=None, detail="insufficient game money")
+        if not wallet_neutral:
+            if user.game_money_balance < stake:
+                return PlaceBetResult(ok=False, bet_id=None, detail="insufficient game money")
 
-        new_bal = user.game_money_balance - stake
-        user.game_money_balance = new_bal
-        db.add(
-            GameMoneyLedgerEntry(
-                user_id=user.id,
-                delta=-stake,
-                balance_after=new_bal,
-                reason=GameMoneyLedgerReason.BET_STAKE.value,
-                reference_type="BET_STAKE",
-                reference_id=external_bet_uid,
+            new_bal = user.game_money_balance - stake
+            user.game_money_balance = new_bal
+            db.add(
+                GameMoneyLedgerEntry(
+                    user_id=user.id,
+                    delta=-stake,
+                    balance_after=new_bal,
+                    reason=GameMoneyLedgerReason.BET_STAKE.value,
+                    reference_type="BET_STAKE",
+                    reference_id=external_bet_uid,
+                )
             )
-        )
         bet = BetHistory(
             external_bet_uid=external_bet_uid,
             user_id=user_id,
