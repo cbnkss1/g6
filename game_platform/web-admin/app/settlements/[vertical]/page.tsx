@@ -316,6 +316,11 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
               </button>
             ) : null}
           </p>
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            <strong className="text-slate-400">롤링합</strong>은 행마다 그 회원 <strong className="text-slate-300">하부
+            트리 전체</strong>가 받은 추천·본인·차액 롤링만(차액 루징 제외). 아래「받은 합계」는{" "}
+            <strong className="text-slate-300">수령인 1명</strong> 기준이라 숫자가 다를 수 있습니다.
+          </p>
           <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
             <table className="w-full min-w-[1080px] text-left text-sm text-slate-300">
               <thead className="border-b border-slate-800 text-[10px] uppercase text-slate-500">
