@@ -46,6 +46,21 @@ const nextConfig = {
       },
     ];
   },
+  /** middleware 대신 설정으로 HTML·페이지 no-store (정적 청크·이미지·css/js 확장자 제외) */
+  async headers() {
+    return [
+      {
+        source:
+          "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, max-age=0, must-revalidate",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
