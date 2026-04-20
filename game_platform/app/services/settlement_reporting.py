@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Collection, Dict, List, Optional
+from typing import Any, Collection, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, cast, case, func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.bet import BetHistory
@@ -24,15 +24,40 @@ _ROLLING_REASONS = (
 )
 
 
-def _rolling_base_join(
-    Player: Any,
-    Referrer: Any,
-) -> Any:
+def _rolling_base_select_aggregated(Player: Any, Referrer: Any) -> Any:
+    """수령인별: 차액 롤링·본인·차액 루징을 분리 합산(상부는 차액 롤링만이 ‘실제 체인 몫’)."""
+    dr = RollingPointLedgerReason.DIFFERENTIAL_ROLLING.value
+    sr = RollingPointLedgerReason.SELF_ROLLING.value
+    lr = RollingPointLedgerReason.DIFFERENTIAL_LOSING.value
+    rr = RollingPointLedgerReason.REFERRAL_ROLLING.value
     return (
         select(
             Referrer.id.label("recv_id"),
             Referrer.login_id.label("recv_login"),
-            func.coalesce(func.sum(RollingPointLedgerEntry.delta), 0).label("sum_delta"),
+            func.coalesce(
+                func.sum(
+                    case((RollingPointLedgerEntry.reason == dr, RollingPointLedgerEntry.delta), else_=0)
+                ),
+                0,
+            ).label("sum_diff_roll"),
+            func.coalesce(
+                func.sum(
+                    case((RollingPointLedgerEntry.reason == sr, RollingPointLedgerEntry.delta), else_=0)
+                ),
+                0,
+            ).label("sum_self_roll"),
+            func.coalesce(
+                func.sum(
+                    case((RollingPointLedgerEntry.reason == lr, RollingPointLedgerEntry.delta), else_=0)
+                ),
+                0,
+            ).label("sum_diff_losing"),
+            func.coalesce(
+                func.sum(
+                    case((RollingPointLedgerEntry.reason == rr, RollingPointLedgerEntry.delta), else_=0)
+                ),
+                0,
+            ).label("sum_referral_roll"),
             func.count(RollingPointLedgerEntry.id).label("ledger_count"),
         )
         .select_from(RollingPointLedgerEntry)
@@ -101,7 +126,7 @@ def get_rolling_settlement_lines(
     Player = aliased(User)
     Referrer = aliased(User)
 
-    stmt = _rolling_base_join(Player, Referrer)
+    stmt = _rolling_base_select_aggregated(Player, Referrer)
     stmt = stmt.where(
         RollingPointLedgerEntry.created_at >= t0,
         RollingPointLedgerEntry.created_at < t1,
@@ -122,15 +147,39 @@ def get_rolling_settlement_lines(
 
     rows = db.execute(stmt).all()
     recipient_totals: List[Dict[str, Any]] = []
-    sum_roll = Decimal("0")
-    for recv_id, recv_login, sum_delta, ledger_count in rows:
-        sd = Decimal(str(sum_delta or 0)).quantize(Decimal("0.000001"))
-        sum_roll += sd
+    sum_diff = Decimal("0")
+    sum_self = Decimal("0")
+    sum_lose = Decimal("0")
+    sum_ref = Decimal("0")
+    for (
+        recv_id,
+        recv_login,
+        sum_diff_roll,
+        sum_self_roll,
+        sum_diff_losing,
+        sum_referral_roll,
+        ledger_count,
+    ) in rows:
+        d_diff = Decimal(str(sum_diff_roll or 0)).quantize(Decimal("0.000001"))
+        d_self = Decimal(str(sum_self_roll or 0)).quantize(Decimal("0.000001"))
+        d_lose = Decimal(str(sum_diff_losing or 0)).quantize(Decimal("0.000001"))
+        d_ref = Decimal(str(sum_referral_roll or 0)).quantize(Decimal("0.000001"))
+        recv_total = (d_diff + d_self + d_lose + d_ref).quantize(Decimal("0.000001"))
+        sum_diff += d_diff
+        sum_self += d_self
+        sum_lose += d_lose
+        sum_ref += d_ref
         recipient_totals.append(
             {
                 "user_id": int(recv_id),
                 "login_id": recv_login,
-                "rolling_paid_sum": str(sd),
+                # 수령인이 이 기간·종목에서 실제로 받은 롤링P 합(차액+본인+루징+추천) — 리프는 차액만 0이어도 여기에 본인 롤이 잡힘
+                "rolling_recv_total": str(recv_total),
+                # 메인 숫자: 추천 체인 **차액 롤링**만 (하부 몫 제외한 상부 실수령 몫에 해당)
+                "rolling_paid_sum": str(d_diff),
+                "rolling_self_sum": str(d_self),
+                "rolling_diff_losing_sum": str(d_lose),
+                "rolling_referral_sum": str(d_ref),
                 "ledger_count": int(ledger_count or 0),
             }
         )
@@ -150,9 +199,28 @@ def get_rolling_settlement_lines(
         "totals": {
             "total_bet_sum": "0",
             "valid_bet_sum": "0",
-            "rolling_paid_sum": str(sum_roll.quantize(Decimal("0.000001"))),
+            "rolling_recv_total": str(
+                (sum_diff + sum_self + sum_lose + sum_ref).quantize(Decimal("0.000001"))
+            ),
+            "rolling_paid_sum": str(sum_diff.quantize(Decimal("0.000001"))),
+            "rolling_self_sum": str(sum_self.quantize(Decimal("0.000001"))),
+            "rolling_diff_losing_sum": str(sum_lose.quantize(Decimal("0.000001"))),
+            "rolling_referral_sum": str(sum_ref.quantize(Decimal("0.000001"))),
         },
     }
+
+
+def _reasons_for_detail_scope(scope: str) -> Tuple[str, ...]:
+    s = (scope or "chain").strip().lower()
+    if s == "chain":
+        return (RollingPointLedgerReason.DIFFERENTIAL_ROLLING.value,)
+    if s == "self":
+        return (RollingPointLedgerReason.SELF_ROLLING.value,)
+    if s == "losing":
+        return (RollingPointLedgerReason.DIFFERENTIAL_LOSING.value,)
+    if s == "referral":
+        return (RollingPointLedgerReason.REFERRAL_ROLLING.value,)
+    return _ROLLING_REASONS
 
 
 def get_rolling_ledger_detail_lines(
@@ -165,11 +233,13 @@ def get_rolling_ledger_detail_lines(
     date_from: date,
     date_to: date,
     vertical: Optional[str] = None,
+    detail_scope: str = "chain",
 ) -> Dict[str, Any]:
-    """수령인·기간·종목별 롤링 원장 건별 목록 (배팅 조인)."""
+    """수령인·기간·종목별 롤링 원장 건별 목록 (배팅 조인). ``detail_scope``: chain=차액롤링만(기본)."""
     t0, t1 = kst_calendar_window_utc(date_from, date_to)
     Player = aliased(User)
     Referrer = aliased(User)
+    reason_filter = _reasons_for_detail_scope(detail_scope)
 
     stmt = (
         select(
@@ -193,7 +263,7 @@ def get_rolling_ledger_detail_lines(
         .join(Referrer, Referrer.id == RollingPointLedgerEntry.user_id)
         .where(
             Referrer.id == recipient_user_id,
-            RollingPointLedgerEntry.reason.in_(_ROLLING_REASONS),
+            RollingPointLedgerEntry.reason.in_(reason_filter),
             RollingPointLedgerEntry.reference_type == "BET",
             RollingPointLedgerEntry.reference_id.isnot(None),
             RollingPointLedgerEntry.reference_id.op("~")("^[0-9]+$"),
@@ -257,5 +327,6 @@ def get_rolling_ledger_detail_lines(
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
         "vertical": v,
+        "detail_scope": (detail_scope or "chain").strip().lower(),
         "items": items,
     }

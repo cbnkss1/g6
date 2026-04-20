@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { formatIsoAsKst, kstTodayYmd } from "@/lib/formatKst";
 import { defaultDetailScopeFromRow, type RollingDetailScope } from "@/lib/rollingDetailScope";
 import { formatMoneyInt } from "@/lib/formatMoney";
+import { rollingRecvTotalString } from "@/lib/rollingRecvTotal";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -56,6 +57,7 @@ type TotalRevenueResponse = {
 type RollingRecipientRow = {
   user_id: number;
   login_id: string;
+  rolling_recv_total?: string;
   rolling_paid_sum: string;
   rolling_self_sum?: string;
   rolling_diff_losing_sum?: string;
@@ -76,6 +78,7 @@ type RollingApiResponse = {
   totals: {
     total_bet_sum: string;
     valid_bet_sum: string;
+    rolling_recv_total?: string;
     rolling_paid_sum: string;
     rolling_self_sum?: string;
     rolling_diff_losing_sum?: string;
@@ -440,8 +443,9 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
           <div>
             <h3 className="text-base font-semibold text-slate-200">롤링포인트 수령 합계 ({title.replace(" 정산", "")})</h3>
             <p className="mt-1 text-xs text-slate-500">
-              <strong className="text-slate-400">차액 롤(P)</strong>은 상부가 받는 차액 롤링만 합산합니다. 행을
-              누르면 원장 상세(기본: 차액 롤링만)를 봅니다.
+              <strong className="text-slate-400">받은 합계</strong>가 해당 회원에게 들어간 롤링P 총액입니다.{" "}
+              <strong className="text-slate-400">차액 롤(P)</strong>은 상부 차액만(하부는 보통 0). 행을 누르면 원장
+              상세가 열립니다.
             </p>
           </div>
           <span className="text-slate-500">{showRolling ? "접기" : "펼치기"}</span>
@@ -466,6 +470,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                     <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
                       <tr>
                         <th className="p-3">수령 회원</th>
+                        <th className="p-3 text-right text-premium">받은 합계(P)</th>
                         <th className="p-3 text-right">차액 롤(P)</th>
                         <th className="p-3 text-right">본인(P)</th>
                         <th className="p-3 text-right">차액루징(P)</th>
@@ -476,7 +481,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                     <tbody>
                       {(rollingQ.data.recipient_totals ?? []).length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="p-6 text-center text-slate-500">
+                          <td colSpan={7} className="p-6 text-center text-slate-500">
                             해당 기간·종목의 롤링 지급 내역이 없습니다.
                           </td>
                         </tr>
@@ -509,6 +514,9 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                             }}
                           >
                             <td className="p-3 font-mono text-premium">{row.login_id}</td>
+                            <td className="p-3 text-right tabular-nums font-semibold text-premium">
+                              {formatMoneyInt(rollingRecvTotalString(row))}
+                            </td>
                             <td className="p-3 text-right tabular-nums text-emerald-300/90">
                               {formatMoneyInt(row.rolling_paid_sum)}
                             </td>
@@ -532,6 +540,9 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                       <tfoot className="border-t border-premium/20 bg-slate-950/80 text-sm font-semibold">
                         <tr>
                           <td className="p-3 text-slate-400">합계</td>
+                          <td className="p-3 text-right tabular-nums font-semibold text-premium">
+                            {formatMoneyInt(rollingRecvTotalString(rollingQ.data.totals))}
+                          </td>
                           <td className="p-3 text-right tabular-nums text-emerald-300">
                             {formatMoneyInt(rollingQ.data.totals.rolling_paid_sum)}
                           </td>
