@@ -531,7 +531,7 @@ def admin_settlement_rolling_lines_detail(
     vertical: str = Query("all", description="casino|slot|powerball|sports|all"),
     detail_scope: str = Query(
         "chain",
-        description="chain=차액롤링만 | self | losing | referral | all",
+        description="chain|self|losing(하부차액루징)|losing_self(본인루징)|referral|all",
     ),
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN

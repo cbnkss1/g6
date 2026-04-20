@@ -60,7 +60,8 @@ type RollingRecipientRow = {
   rolling_recv_total?: string;
   rolling_paid_sum: string;
   rolling_self_sum?: string;
-  rolling_diff_losing_sum?: string;
+  rolling_diff_losing_self_sum?: string;
+  rolling_diff_losing_downline_sum?: string;
   rolling_referral_sum?: string;
   ledger_count: number;
 };
@@ -81,7 +82,8 @@ type RollingApiResponse = {
     rolling_recv_total?: string;
     rolling_paid_sum: string;
     rolling_self_sum?: string;
-    rolling_diff_losing_sum?: string;
+    rolling_diff_losing_self_sum?: string;
+    rolling_diff_losing_downline_sum?: string;
     rolling_referral_sum?: string;
   };
 };
@@ -478,7 +480,8 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                         <th className="p-3 text-right text-premium">받은 합계(P)</th>
                         <th className="p-3 text-right">차액 롤(P)</th>
                         <th className="p-3 text-right">본인(P)</th>
-                        <th className="p-3 text-right">차액루징(P)</th>
+                        <th className="p-3 text-right">본인 루징(P)</th>
+                        <th className="p-3 text-right">하부 차액루징(P)</th>
                         <th className="p-3 text-right">추천(P)</th>
                         <th className="p-3 text-right">원장 건수</th>
                       </tr>
@@ -486,7 +489,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                     <tbody>
                       {(rollingQ.data.recipient_totals ?? []).length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="p-6 text-center text-slate-500">
+                          <td colSpan={8} className="p-6 text-center text-slate-500">
                             해당 기간·종목의 롤링 지급 내역이 없습니다.
                           </td>
                         </tr>
@@ -529,7 +532,10 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                               {formatMoneyInt(row.rolling_self_sum ?? "0")}
                             </td>
                             <td className="p-3 text-right tabular-nums text-slate-400">
-                              {formatMoneyInt(row.rolling_diff_losing_sum ?? "0")}
+                              {formatMoneyInt(row.rolling_diff_losing_self_sum ?? "0")}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_diff_losing_downline_sum ?? "0")}
                             </td>
                             <td className="p-3 text-right tabular-nums text-slate-400">
                               {formatMoneyInt(row.rolling_referral_sum ?? "0")}
@@ -555,7 +561,10 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                             {formatMoneyInt(rollingQ.data.totals.rolling_self_sum ?? "0")}
                           </td>
                           <td className="p-3 text-right tabular-nums text-slate-400">
-                            {formatMoneyInt(rollingQ.data.totals.rolling_diff_losing_sum ?? "0")}
+                            {formatMoneyInt(rollingQ.data.totals.rolling_diff_losing_self_sum ?? "0")}
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_diff_losing_downline_sum ?? "0")}
                           </td>
                           <td className="p-3 text-right tabular-nums text-slate-400">
                             {formatMoneyInt(rollingQ.data.totals.rolling_referral_sum ?? "0")}
@@ -597,7 +606,8 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                   >
                     <option value="chain">차액 롤링만</option>
                     <option value="self">본인 롤링만</option>
-                    <option value="losing">차액 루징만</option>
+                    <option value="losing_self">본인 루징만</option>
+                    <option value="losing">하부 차액 루징만</option>
                     <option value="referral">추천 롤링만</option>
                     <option value="all">전체</option>
                   </select>
@@ -612,9 +622,8 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
               </div>
             </div>
             <p className="border-b border-slate-800 px-4 pb-2 text-[11px] leading-relaxed text-slate-500">
-              <strong className="text-slate-400">차액 롤링</strong>이 0이면 본인·추천·루징 건은{" "}
-              <strong className="text-slate-400">구분</strong>에서 바꿔야 보입니다. 행을 누르면 위 표 숫자에 맞게
-              기본값이 잡힙니다.
+              <strong className="text-slate-400">하부 차액 루징</strong>은 하부 회원 배팅에서 상부로 지급된
+              건입니다. <strong className="text-slate-400">본인 루징</strong>은 배터=수령인인 건만(대부분 0).
             </p>
             <div className="max-h-[calc(85vh-3.5rem)] overflow-auto p-4">
               {detailQ.isLoading && <p className="text-sm text-slate-500">불러오는 중…</p>}
@@ -638,7 +647,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                     <tbody>
                       {detailQ.data.items.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="p-6 text-center text-slate-500">
+                          <td colSpan={8} className="p-6 text-center text-slate-500">
                             해당 구간에 건별 내역이 없습니다.
                           </td>
                         </tr>

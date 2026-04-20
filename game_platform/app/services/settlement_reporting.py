@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Collection, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import Integer, cast, case, func, select
+from sqlalchemy import Integer, and_, cast, case, func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.bet import BetHistory
@@ -30,6 +30,9 @@ def _rolling_base_select_aggregated(Player: Any, Referrer: Any) -> Any:
     sr = RollingPointLedgerReason.SELF_ROLLING.value
     lr = RollingPointLedgerReason.DIFFERENTIAL_LOSING.value
     rr = RollingPointLedgerReason.REFERRAL_ROLLING.value
+    # 차액 루징: 배터=수령인(본인 배팅에서 생긴 루징) vs 하부 배팅에서 상부로 지급된 루징
+    losing_self_case = and_(RollingPointLedgerEntry.reason == lr, Player.id == Referrer.id)
+    losing_down_case = and_(RollingPointLedgerEntry.reason == lr, Player.id != Referrer.id)
     return (
         select(
             Referrer.id.label("recv_id"),
@@ -47,11 +50,13 @@ def _rolling_base_select_aggregated(Player: Any, Referrer: Any) -> Any:
                 0,
             ).label("sum_self_roll"),
             func.coalesce(
-                func.sum(
-                    case((RollingPointLedgerEntry.reason == lr, RollingPointLedgerEntry.delta), else_=0)
-                ),
+                func.sum(case((losing_self_case, RollingPointLedgerEntry.delta), else_=0)),
                 0,
-            ).label("sum_diff_losing"),
+            ).label("sum_losing_self"),
+            func.coalesce(
+                func.sum(case((losing_down_case, RollingPointLedgerEntry.delta), else_=0)),
+                0,
+            ).label("sum_losing_downline"),
             func.coalesce(
                 func.sum(
                     case((RollingPointLedgerEntry.reason == rr, RollingPointLedgerEntry.delta), else_=0)
@@ -149,25 +154,29 @@ def get_rolling_settlement_lines(
     recipient_totals: List[Dict[str, Any]] = []
     sum_diff = Decimal("0")
     sum_self = Decimal("0")
-    sum_lose = Decimal("0")
+    sum_lose_self = Decimal("0")
+    sum_lose_down = Decimal("0")
     sum_ref = Decimal("0")
     for (
         recv_id,
         recv_login,
         sum_diff_roll,
         sum_self_roll,
-        sum_diff_losing,
+        sum_losing_self,
+        sum_losing_downline,
         sum_referral_roll,
         ledger_count,
     ) in rows:
         d_diff = Decimal(str(sum_diff_roll or 0)).quantize(Decimal("0.000001"))
         d_self = Decimal(str(sum_self_roll or 0)).quantize(Decimal("0.000001"))
-        d_lose = Decimal(str(sum_diff_losing or 0)).quantize(Decimal("0.000001"))
+        d_ls = Decimal(str(sum_losing_self or 0)).quantize(Decimal("0.000001"))
+        d_ld = Decimal(str(sum_losing_downline or 0)).quantize(Decimal("0.000001"))
         d_ref = Decimal(str(sum_referral_roll or 0)).quantize(Decimal("0.000001"))
-        recv_total = (d_diff + d_self + d_lose + d_ref).quantize(Decimal("0.000001"))
+        recv_total = (d_diff + d_self + d_ls + d_ld + d_ref).quantize(Decimal("0.000001"))
         sum_diff += d_diff
         sum_self += d_self
-        sum_lose += d_lose
+        sum_lose_self += d_ls
+        sum_lose_down += d_ld
         sum_ref += d_ref
         recipient_totals.append(
             {
@@ -178,7 +187,8 @@ def get_rolling_settlement_lines(
                 # 메인 숫자: 추천 체인 **차액 롤링**만 (하부 몫 제외한 상부 실수령 몫에 해당)
                 "rolling_paid_sum": str(d_diff),
                 "rolling_self_sum": str(d_self),
-                "rolling_diff_losing_sum": str(d_lose),
+                "rolling_diff_losing_self_sum": str(d_ls),
+                "rolling_diff_losing_downline_sum": str(d_ld),
                 "rolling_referral_sum": str(d_ref),
                 "ledger_count": int(ledger_count or 0),
             }
@@ -200,11 +210,14 @@ def get_rolling_settlement_lines(
             "total_bet_sum": "0",
             "valid_bet_sum": "0",
             "rolling_recv_total": str(
-                (sum_diff + sum_self + sum_lose + sum_ref).quantize(Decimal("0.000001"))
+                (sum_diff + sum_self + sum_lose_self + sum_lose_down + sum_ref).quantize(
+                    Decimal("0.000001")
+                )
             ),
             "rolling_paid_sum": str(sum_diff.quantize(Decimal("0.000001"))),
             "rolling_self_sum": str(sum_self.quantize(Decimal("0.000001"))),
-            "rolling_diff_losing_sum": str(sum_lose.quantize(Decimal("0.000001"))),
+            "rolling_diff_losing_self_sum": str(sum_lose_self.quantize(Decimal("0.000001"))),
+            "rolling_diff_losing_downline_sum": str(sum_lose_down.quantize(Decimal("0.000001"))),
             "rolling_referral_sum": str(sum_ref.quantize(Decimal("0.000001"))),
         },
     }
@@ -216,7 +229,8 @@ def _reasons_for_detail_scope(scope: str) -> Tuple[str, ...]:
         return (RollingPointLedgerReason.DIFFERENTIAL_ROLLING.value,)
     if s == "self":
         return (RollingPointLedgerReason.SELF_ROLLING.value,)
-    if s == "losing":
+    # 차액 루징: losing=하부 배팅 기준, losing_self=배터==수령인(본인 루징) — reason 동일, 건별 필터로 구분
+    if s in ("losing", "losing_self"):
         return (RollingPointLedgerReason.DIFFERENTIAL_LOSING.value,)
     if s == "referral":
         return (RollingPointLedgerReason.REFERRAL_ROLLING.value,)
@@ -283,6 +297,11 @@ def get_rolling_ledger_detail_lines(
         Player=Player,
         Referrer=Referrer,
     )
+    ds = (detail_scope or "chain").strip().lower()
+    if ds == "losing":
+        stmt = stmt.where(Player.id != Referrer.id)
+    elif ds == "losing_self":
+        stmt = stmt.where(Player.id == Referrer.id)
     stmt = stmt.order_by(RollingPointLedgerEntry.created_at.desc(), RollingPointLedgerEntry.id.desc())
 
     rows = db.execute(stmt).all()

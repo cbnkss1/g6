@@ -159,6 +159,47 @@ def _sum_rolling_delta(
     return Decimal(str(db.scalar(stmt) or 0)).quantize(Q)
 
 
+def _sum_differential_losing_split(
+    db: Session,
+    ledger_recipient_user_ids: Tuple[int, ...],
+    t0: datetime,
+    t1: datetime,
+    game_types: Optional[Tuple[str, ...]],
+    *,
+    self_only: bool,
+) -> Decimal:
+    """
+    DIFFERENTIAL_LOSING 합계. ``self_only=True`` → 배팅자==롤링 수령인(본인 루징), ``False`` → 하부 배팅에서 온 차액 루징.
+    """
+    if not ledger_recipient_user_ids:
+        return Decimal("0").quantize(Q)
+    lr = RollingPointLedgerReason.DIFFERENTIAL_LOSING.value
+    bettor_cmp = (
+        BetHistory.user_id == RollingPointLedgerEntry.user_id
+        if self_only
+        else BetHistory.user_id != RollingPointLedgerEntry.user_id
+    )
+    stmt = (
+        select(func.coalesce(func.sum(RollingPointLedgerEntry.delta), 0))
+        .select_from(RollingPointLedgerEntry)
+        .join(
+            BetHistory,
+            (RollingPointLedgerEntry.reference_type == "BET")
+            & (RollingPointLedgerEntry.reference_id == cast(BetHistory.id, String)),
+        )
+        .where(
+            RollingPointLedgerEntry.user_id.in_(ledger_recipient_user_ids),
+            RollingPointLedgerEntry.reason == lr,
+            RollingPointLedgerEntry.created_at >= t0,
+            RollingPointLedgerEntry.created_at < t1,
+            bettor_cmp,
+        )
+    )
+    if game_types:
+        stmt = stmt.where(BetHistory.game_type.in_(game_types))
+    return Decimal(str(db.scalar(stmt) or 0)).quantize(Q)
+
+
 def _effective_losing_percent_partner_period(
     db: Session,
     partner_user_id: int,
@@ -266,13 +307,14 @@ def _build_revenue_row(
         r_mem = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_FROM_MEMBERS, gt)
         r_self = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_SELF_ONLY, gt)
         r_only_display = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_REASONS_ROLLING_ONLY, gt)
-        r_lose_pt = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_REASONS_DIFF_LOSING_ONLY, gt)
     else:
         ids_roll = ids_sub
         r_mem = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_FROM_MEMBERS, gt)
         r_self = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_SELF_ONLY, gt)
         r_only_display = r_only_subtree
-        r_lose_pt = _sum_rolling_delta(db, ids_roll, t0, t1, ROLL_REASONS_DIFF_LOSING_ONLY, gt)
+    r_lose_self = _sum_differential_losing_split(db, ids_roll, t0, t1, gt, self_only=True)
+    r_lose_down = _sum_differential_losing_split(db, ids_roll, t0, t1, gt, self_only=False)
+    r_lose_pt = (r_lose_self + r_lose_down).quantize(Q)
     bet_settle = (bpl - r_only_subtree).quantize(Q)
     eff_l = _effective_losing_percent_partner_period(db, partner_user.id, ids_sub, t0, t1, gt)
     ls = (bet_settle * eff_l / Decimal("100")).quantize(Q)
@@ -294,6 +336,8 @@ def _build_revenue_row(
         "rolling_self": str(r_self),
         "rolling_points": str(r_only_display),
         "losing_point_ledger": str(r_lose_pt),
+        "losing_point_ledger_self": str(r_lose_self),
+        "losing_point_ledger_downline": str(r_lose_down),
         "losing": str(ls),
         "losing_rate_percent": str(eff_l),
         "bet_settlement": str(bet_settle),
