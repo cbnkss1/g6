@@ -1,6 +1,7 @@
 [Unit]
 Description=game_platform web-admin Next.js (어드민 test.slotpass.net → 포트 3000)
-After=network.target
+After=network.target gp-api-8100.service
+# Next 프록시(/gp-api)가 8100에 붙으므로 API 이후 기동 순서 보장
 
 [Service]
 Type=simple
