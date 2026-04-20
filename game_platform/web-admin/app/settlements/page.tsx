@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
+import { formatIsoAsKst, kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
+import { defaultDetailScopeFromRow, type RollingDetailScope } from "@/lib/rollingDetailScope";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -46,7 +47,11 @@ type TotalRevenueResponse = {
 type RollingRecipientRow = {
   user_id: number;
   login_id: string;
+  /** 차액 롤링(DIFFERENTIAL_ROLLING) 합 — 상부 실수령 몫 */
   rolling_paid_sum: string;
+  rolling_self_sum?: string;
+  rolling_diff_losing_sum?: string;
+  rolling_referral_sum?: string;
   ledger_count: number;
 };
 
@@ -62,8 +67,33 @@ type RollingApiResponse = {
     total_bet_sum: string;
     valid_bet_sum: string;
     rolling_paid_sum: string;
+    rolling_self_sum?: string;
+    rolling_diff_losing_sum?: string;
+    rolling_referral_sum?: string;
   };
 };
+
+type RollingDetailItem = {
+  ledger_id: number;
+  created_at: string | null;
+  delta: string;
+  reason: string;
+  bet_id: number;
+  game_type: string;
+  bet_amount: string;
+  external_bet_uid: string;
+  bettor_login: string;
+  recipient_login: string;
+};
+
+type RollingDetailResponse = {
+  recipient_user_id: number;
+  recipient_login_id: string | null;
+  detail_scope?: string;
+  items: RollingDetailItem[];
+};
+
+type DetailScope = RollingDetailScope;
 
 function defaultKstRange(): { from: string; to: string } {
   return { from: kstDaysAgoYmd(30), to: kstTodayYmd() };
@@ -80,6 +110,12 @@ export default function SettlementsPage() {
     "all",
   );
   const [showRollingVerify, setShowRollingVerify] = useState(true);
+  const [detailRecipient, setDetailRecipient] = useState<{
+    user_id: number;
+    login_id: string;
+    initialScope: DetailScope;
+  } | null>(null);
+  const [detailScope, setDetailScope] = useState<DetailScope>("chain");
 
   useEffect(() => {
     if (me?.id != null) setParentId(String(me.id));
@@ -122,15 +158,14 @@ export default function SettlementsPage() {
     enabled: Boolean(token) && Boolean(dateFrom) && Boolean(dateTo) && parentId.trim().length > 0,
   });
 
-  const rollingToday = kstTodayYmd();
   const rollingQ = useQuery({
-    queryKey: ["admin", "settlements", "rolling-lines", token ?? "", rollingToday, "all"],
+    queryKey: ["admin", "settlements", "rolling-lines", token ?? "", dateFrom, dateTo, "all"],
     queryFn: async () => {
       const base = publicApiBase();
       if (!base || !token) throw new Error("missing env or token");
       const q = new URLSearchParams({
-        date_from: rollingToday,
-        date_to: rollingToday,
+        date_from: dateFrom,
+        date_to: dateTo,
         vertical: "all",
       });
       const r = await fetch(`${base}/admin/settlements/rolling-lines?${q}`, {
@@ -140,8 +175,40 @@ export default function SettlementsPage() {
       if (!r.ok) throw new Error(`rolling-lines ${r.status}`);
       return (await r.json()) as RollingApiResponse;
     },
-    enabled: Boolean(token) && showRollingVerify,
+    enabled: Boolean(token) && showRollingVerify && Boolean(dateFrom) && Boolean(dateTo),
     refetchInterval: 60_000,
+  });
+
+  const detailQ = useQuery({
+    queryKey: [
+      "admin",
+      "settlements",
+      "rolling-lines",
+      "detail",
+      token ?? "",
+      detailRecipient?.user_id,
+      dateFrom,
+      dateTo,
+      detailScope,
+    ],
+    queryFn: async () => {
+      const base = publicApiBase();
+      if (!base || !token || !detailRecipient) throw new Error("missing");
+      const q = new URLSearchParams({
+        recipient_user_id: String(detailRecipient.user_id),
+        date_from: dateFrom,
+        date_to: dateTo,
+        vertical: "all",
+        detail_scope: detailScope,
+      });
+      const r = await fetch(`${base}/admin/settlements/rolling-lines/detail?${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!r.ok) throw new Error(`rolling detail ${r.status}`);
+      return (await r.json()) as RollingDetailResponse;
+    },
+    enabled: Boolean(token) && detailRecipient != null && Boolean(dateFrom) && Boolean(dateTo),
   });
 
   return (
@@ -252,8 +319,8 @@ export default function SettlementsPage() {
           </p>
           <p className="text-[11px] leading-relaxed text-slate-500">
             <strong className="text-slate-400">롤링합</strong>은 추천·본인·차액 롤링만(배팅정산에서 빼는 것과
-            동일). <strong className="text-slate-400">차액루징(P)</strong>은 같은 롤링P 지갑에 쌓이지만 성격은
-            루징이라 별도 열입니다. <strong className="text-slate-400">배팅정산</strong> = 배팅손익 − 롤링합.
+            동일). 차액 루징(P)은 롤링P 지갑 변동에 포함되나 본 표에서는 생략합니다.{" "}
+            <strong className="text-slate-400">배팅정산</strong> = 배팅손익 − 롤링합.
           </p>
           <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
             <table className="w-full min-w-[1080px] text-left text-sm text-slate-300">
@@ -267,7 +334,6 @@ export default function SettlementsPage() {
                   <th className="p-2 text-right">당첨</th>
                   <th className="p-2 text-right">배팅손익</th>
                   <th className="p-2 text-right">롤링합</th>
-                  <th className="p-2 text-right">차액루징(P)</th>
                   <th className="p-2 text-right">배팅정산</th>
                   <th className="p-2 text-right">루징(추정)</th>
                   <th className="p-2 text-right">보유머니</th>
@@ -277,7 +343,7 @@ export default function SettlementsPage() {
               <tbody>
                 {totalQ.data.rows.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="p-6 text-center text-slate-500">
+                    <td colSpan={12} className="p-6 text-center text-slate-500">
                       표시할 데이터가 없습니다.
                     </td>
                   </tr>
@@ -318,9 +384,6 @@ export default function SettlementsPage() {
                       <td className="p-2 text-right tabular-nums">{formatMoneyInt(row.win_amount)}</td>
                       <td className="p-2 text-right tabular-nums">{formatMoneyInt(row.bet_profit_loss)}</td>
                       <td className="p-2 text-right tabular-nums">{formatMoneyInt(row.rolling_total)}</td>
-                      <td className="p-2 text-right tabular-nums text-slate-400">
-                        {formatMoneyInt(row.losing_point_ledger)}
-                      </td>
                       <td className="p-2 text-right tabular-nums font-medium text-premium">
                         {formatMoneyInt(row.bet_settlement)}
                       </td>
@@ -360,9 +423,6 @@ export default function SettlementsPage() {
                     <td className="p-2 text-right tabular-nums">
                       {formatMoneyInt(totalQ.data.totals.rolling_total)}
                     </td>
-                    <td className="p-2 text-right tabular-nums text-slate-500">
-                      {formatMoneyInt(totalQ.data.totals.losing_point_ledger)}
-                    </td>
                     <td className="p-2 text-right tabular-nums text-premium">
                       {formatMoneyInt(totalQ.data.totals.bet_settlement)}
                     </td>
@@ -387,11 +447,12 @@ export default function SettlementsPage() {
           onClick={() => setShowRollingVerify((v) => !v)}
         >
           <div>
-            <h3 className="text-base font-semibold text-slate-200">오늘 롤링포인트 수령 합계</h3>
+            <h3 className="text-base font-semibold text-slate-200">롤링포인트 수령 합계</h3>
             <p className="mt-1 text-xs text-slate-500">
-              회원별로 당일 지급분을 합산합니다. 배팅 1건에 여러 줄이 있어도 여기서는{" "}
-              <strong className="text-slate-400">수령인 한 줄</strong>만 보입니다. (
-              <strong className="text-slate-400">당일 KST 자정</strong> 이후)
+              위에서 고른 <strong className="text-slate-400">기간·KST</strong>와 동일하게 집계합니다.{" "}
+              <strong className="text-slate-400">차액 롤(P)</strong>은 상부 몫,{" "}
+              <strong className="text-slate-400">본인(P)</strong>은 본인 배팅 롤링입니다. 행을 누르면 원장
+              상세가 열리며, 숫자에 맞게 구분이 자동 선택됩니다.
             </p>
           </div>
           <span className="text-slate-500">{showRollingVerify ? "접기" : "펼치기"}</span>
@@ -408,37 +469,71 @@ export default function SettlementsPage() {
                 <p className="text-sm text-slate-500">
                   집계 기간 (KST):{" "}
                   <span className="font-mono text-premium">
-                    {rollingQ.data.date_from ?? rollingToday} ~ {rollingQ.data.date_to ?? rollingToday}
+                    {rollingQ.data.date_from ?? dateFrom} ~ {rollingQ.data.date_to ?? dateTo}
                   </span>
                   {rollingQ.data.timezone ? (
                     <span className="ml-2 text-slate-600">({rollingQ.data.timezone})</span>
                   ) : null}
                 </p>
                 <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
-                  <table className="w-full min-w-[480px] text-left text-sm text-slate-300">
+                  <table className="w-full min-w-[720px] text-left text-sm text-slate-300">
                     <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
                       <tr>
                         <th className="p-3">수령 회원</th>
-                        <th className="p-3 text-right">당일 롤링 합계(P)</th>
+                        <th className="p-3 text-right">차액 롤(P)</th>
+                        <th className="p-3 text-right">본인(P)</th>
+                        <th className="p-3 text-right">차액루징(P)</th>
+                        <th className="p-3 text-right">추천(P)</th>
                         <th className="p-3 text-right">원장 건수</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(rollingQ.data.recipient_totals ?? []).length === 0 ? (
                         <tr>
-                          <td colSpan={3} className="p-6 text-center text-slate-500">
-                            오늘 지급된 롤링 내역이 없습니다.
+                          <td colSpan={6} className="p-6 text-center text-slate-500">
+                            해당 기간에 지급된 롤링 내역이 없습니다.
                           </td>
                         </tr>
                       ) : (
                         (rollingQ.data.recipient_totals ?? []).map((row) => (
                           <tr
                             key={row.user_id}
-                            className="border-b border-slate-800/70 hover:bg-slate-800/30"
+                            role="button"
+                            tabIndex={0}
+                            className="cursor-pointer border-b border-slate-800/70 hover:bg-slate-800/30"
+                            onClick={() => {
+                              const s = defaultDetailScopeFromRow(row);
+                              setDetailScope(s);
+                              setDetailRecipient({
+                                user_id: row.user_id,
+                                login_id: row.login_id,
+                                initialScope: s,
+                              });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                const s = defaultDetailScopeFromRow(row);
+                                setDetailScope(s);
+                                setDetailRecipient({
+                                  user_id: row.user_id,
+                                  login_id: row.login_id,
+                                  initialScope: s,
+                                });
+                              }
+                            }}
                           >
                             <td className="p-3 font-mono text-premium">{row.login_id}</td>
                             <td className="p-3 text-right tabular-nums text-emerald-300/90">
                               {formatMoneyInt(row.rolling_paid_sum)}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_self_sum ?? "0")}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_diff_losing_sum ?? "0")}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_referral_sum ?? "0")}
                             </td>
                             <td className="p-3 text-right tabular-nums text-slate-500">
                               {row.ledger_count}
@@ -454,6 +549,15 @@ export default function SettlementsPage() {
                           <td className="p-3 text-right tabular-nums text-emerald-300">
                             {formatMoneyInt(rollingQ.data.totals.rolling_paid_sum)}
                           </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_self_sum ?? "0")}
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_diff_losing_sum ?? "0")}
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_referral_sum ?? "0")}
+                          </td>
                           <td className="p-3" />
                         </tr>
                       </tfoot>
@@ -465,6 +569,104 @@ export default function SettlementsPage() {
           </div>
         )}
       </div>
+
+      {detailRecipient && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rolling-detail-title-main"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDetailRecipient(null);
+          }}
+        >
+          <div className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
+              <h4 id="rolling-detail-title-main" className="text-sm font-semibold text-slate-100">
+                롤링 원장 상세 — {detailRecipient.login_id} (#{detailRecipient.user_id})
+              </h4>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-500">
+                  구분
+                  <select
+                    value={detailScope}
+                    onChange={(e) => setDetailScope(e.target.value as DetailScope)}
+                    className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="chain">차액 롤링만</option>
+                    <option value="self">본인 롤링만</option>
+                    <option value="losing">차액 루징만</option>
+                    <option value="referral">추천 롤링만</option>
+                    <option value="all">전체</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  onClick={() => setDetailRecipient(null)}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+            <p className="border-b border-slate-800 px-4 pb-2 text-[11px] leading-relaxed text-slate-500">
+              <strong className="text-slate-400">차액 롤링</strong>이 0이면 본인·추천·루징 건은{" "}
+              <strong className="text-slate-400">구분</strong>에서 바꿔야 보입니다. 행을 누르면 위 표 숫자에 맞게
+              기본값이 잡힙니다.
+            </p>
+            <div className="max-h-[calc(85vh-3.5rem)] overflow-auto p-4">
+              {detailQ.isLoading && <p className="text-sm text-slate-500">불러오는 중…</p>}
+              {detailQ.isError && (
+                <p className="text-sm text-red-400">상세를 불러오지 못했습니다.</p>
+              )}
+              {detailQ.data && (
+                <div className="table-scroll rounded-lg border border-slate-800">
+                  <table className="w-full min-w-[720px] text-left text-xs text-slate-300">
+                    <thead className="border-b border-slate-800 text-[10px] uppercase text-slate-500">
+                      <tr>
+                        <th className="p-2">시각 (KST)</th>
+                        <th className="p-2 text-right">지급(P)</th>
+                        <th className="p-2">사유</th>
+                        <th className="p-2">배터</th>
+                        <th className="p-2">종목</th>
+                        <th className="p-2 text-right">배팅액</th>
+                        <th className="p-2 font-mono">배팅 ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailQ.data.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-6 text-center text-slate-500">
+                            해당 구간에 건별 내역이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        detailQ.data.items.map((it) => (
+                          <tr key={it.ledger_id} className="border-b border-slate-800/60">
+                            <td className="p-2 whitespace-nowrap text-slate-400">
+                              {formatIsoAsKst(it.created_at)}
+                            </td>
+                            <td className="p-2 text-right tabular-nums text-emerald-300/90">
+                              {formatMoneyInt(it.delta)}
+                            </td>
+                            <td className="p-2">{it.reason}</td>
+                            <td className="p-2 font-mono">{it.bettor_login}</td>
+                            <td className="p-2">{it.game_type}</td>
+                            <td className="p-2 text-right tabular-nums">{formatMoneyInt(it.bet_amount)}</td>
+                            <td className="p-2 font-mono text-[10px] text-slate-500">
+                              #{it.bet_id} · {it.external_bet_uid}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

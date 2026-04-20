@@ -37,3 +37,20 @@ def kst_today_date(now: Optional[datetime] = None) -> date:
     elif now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     return now.astimezone(KST).date()
+
+
+def optional_kst_calendar_window(
+    date_from: Optional[date],
+    date_to: Optional[date],
+    *,
+    default_span_days: int = 6,
+) -> Tuple[datetime, datetime]:
+    """
+    관리자 로그·원장용: KST 달력 구간 [t0, t1) (UTC).
+    생략 시 오늘(KST)까지 포함해 최근 (default_span_days + 1)일.
+    """
+    d1 = date_to if date_to is not None else kst_today_date()
+    d0 = date_from if date_from is not None else (d1 - timedelta(days=default_span_days))
+    if d0 > d1:
+        raise ValueError("date_from must be on or before date_to")
+    return kst_calendar_window_utc(d0, d1)

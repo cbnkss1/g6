@@ -1,7 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { KstDateRangeFields } from "@/components/admin/KstDateRangeFields";
+import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -54,18 +56,25 @@ export default function AuditLogPage() {
   const user = useAuthStore((s) => s.user);
   const [actionFilter, setActionFilter] = useState("");
   const [actorFilter, setActorFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => kstDaysAgoYmd(6));
+  const [dateTo, setDateTo] = useState(() => kstTodayYmd());
   const [expanded, setExpanded] = useState<number | null>(null);
 
   const base = publicApiBase();
   const headers = { Authorization: `Bearer ${token}` };
 
-  const params = new URLSearchParams();
-  if (actionFilter) params.set("action", actionFilter);
-  if (actorFilter) params.set("actor_login_id", actorFilter);
-  params.set("limit", "200");
+  const params = useMemo(() => {
+    const p = new URLSearchParams();
+    if (actionFilter) p.set("action", actionFilter);
+    if (actorFilter) p.set("actor_login_id", actorFilter);
+    p.set("date_from", dateFrom);
+    p.set("date_to", dateTo);
+    p.set("limit", "200");
+    return p;
+  }, [actionFilter, actorFilter, dateFrom, dateTo]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["audit-logs", actionFilter, actorFilter],
+    queryKey: ["audit-logs", actionFilter, actorFilter, dateFrom, dateTo],
     queryFn: async () => {
       const r = await fetch(`${base}/admin/audit-logs?${params}`, { headers });
       if (!r.ok) {
@@ -93,8 +102,17 @@ export default function AuditLogPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-premium-glow tracking-tight">감사 로그</h1>
-          <p className="mt-0.5 text-xs text-slate-500">모든 관리자 활동의 불변 기록 (슈퍼관리자 전용)</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            모든 관리자 활동의 불변 기록 (슈퍼관리자 전용, 기간 KST)
+          </p>
         </div>
+        <KstDateRangeFields
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          className="flex flex-wrap items-end gap-3"
+        />
         <div className="flex flex-wrap gap-2">
           <input
             type="text"

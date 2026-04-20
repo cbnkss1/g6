@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -19,6 +20,7 @@ from app.models.powerball import PowerballBet, PowerballRound
 from app.models.site_config import SiteConfig
 from app.models.user import User
 from app.services.downline_subtree import downward_subtree_user_ids
+from app.services.kst_time import optional_kst_calendar_window
 from app.services.powerball_service import (
     VALID_PICKS,
     commit_poll_transaction_if_modified,
@@ -184,8 +186,18 @@ def powerball_bets(
     user_id: Optional[int] = Query(None),
     game_key: Optional[str] = Query(None, description="종목 키(예 coinpowerball3)"),
     login_id: Optional[str] = Query(None, description="회원 login_id 부분 검색"),
+    date_from: Optional[date] = Query(None, description="KST 시작일(포함)"),
+    date_to: Optional[date] = Query(None, description="KST 종료일(포함)"),
 ) -> dict[str, Any]:
-    q = select(PowerballBet).order_by(desc(PowerballBet.id))
+    try:
+        t0, t1 = optional_kst_calendar_window(date_from, date_to, default_span_days=6)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 범위가 올바르지 않습니다. (KST)")
+    q = (
+        select(PowerballBet)
+        .where(PowerballBet.created_at >= t0, PowerballBet.created_at < t1)
+        .order_by(desc(PowerballBet.id))
+    )
     allowed: Optional[set[int]] = None
     if user.role != USER_ROLE_SUPER_ADMIN:
         allowed = set(downward_subtree_user_ids(db, user.id))

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import jwt
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -47,7 +47,7 @@ from app.services.bet_limit_service import (
 from app.services.bet_history_lines import build_history_lines_for_scope
 from app.services.cash_service import CashService, cash_request_to_dict
 from app.services.dashboard_stats import get_cash_dashboard_metrics, get_today_totals
-from app.services.ledger_labels import label_game_money_reason
+from app.services.ledger_labels import label_game_money_reason, label_rolling_reason
 from app.services.downline_subtree import (
     downward_subtree_user_ids,
     downward_subtree_users_for_tree,
@@ -69,9 +69,25 @@ from app.services.site_policy_service import (
     merge_site_policies,
     policies_dict,
 )
+from app.services.kst_time import optional_kst_calendar_window
 from app.websockets.manager import admin_ws_manager
 
 router = APIRouter()
+
+
+def _kst_range_or_http(
+    date_from: Optional[date],
+    date_to: Optional[date],
+    *,
+    default_span_days: int = 6,
+) -> tuple[datetime, datetime]:
+    try:
+        return optional_kst_calendar_window(date_from, date_to, default_span_days=default_span_days)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="날짜 범위가 올바르지 않습니다. (KST 기준, date_from ≤ date_to)",
+        )
 
 
 async def _broadcast_dashboard_refresh() -> None:
@@ -513,6 +529,10 @@ def admin_settlement_rolling_lines_detail(
     date_from: date = Query(..., description="시작일 (KST)"),
     date_to: date = Query(..., description="종료일 (KST)"),
     vertical: str = Query("all", description="casino|slot|powerball|sports|all"),
+    detail_scope: str = Query(
+        "chain",
+        description="chain=차액롤링만 | self | losing | referral | all",
+    ),
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN
     if super_admin:
@@ -525,6 +545,7 @@ def admin_settlement_rolling_lines_detail(
             date_from=date_from,
             date_to=date_to,
             vertical=vertical or "all",
+            detail_scope=detail_scope or "chain",
         )
     subtree = downward_subtree_user_ids(db, user.id)
     return get_rolling_ledger_detail_lines(
@@ -536,7 +557,135 @@ def admin_settlement_rolling_lines_detail(
         date_from=date_from,
         date_to=date_to,
         vertical=vertical or "all",
+        detail_scope=detail_scope or "chain",
     )
+
+
+def _ledger_scope_user_ids(db: Session, viewer: User) -> Optional[frozenset]:
+    """
+    원장 조회용 허용 user_id 집합.
+    슈퍼관리자: None (= 전체).
+    그 외: 하향 하부만(본인 제외 — UI '하부 회원만' 과 동일).
+    """
+    if viewer.role == USER_ROLE_SUPER_ADMIN:
+        return None
+    sub = downward_subtree_user_ids(db, viewer.id)
+    out = frozenset(sub - {viewer.id})
+    return out
+
+
+@router.get("/ledger/game-money", summary="게임머니 원장 (하부·검색)")
+def admin_ledger_game_money(
+    user: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    login_id: Optional[str] = Query(None, description="로그인 ID 부분 일치"),
+    date_from: Optional[date] = Query(None, description="KST 시작일(포함)"),
+    date_to: Optional[date] = Query(None, description="KST 종료일(포함)"),
+) -> Dict[str, Any]:
+    scope = _ledger_scope_user_ids(db, user)
+    if scope is not None and len(scope) == 0:
+        return {"items": [], "limit": limit, "offset": offset}
+
+    t0, t1 = _kst_range_or_http(date_from, date_to)
+    stmt = (
+        select(GameMoneyLedgerEntry, User.login_id, User.display_name)
+        .join(User, User.id == GameMoneyLedgerEntry.user_id)
+        .where(
+            GameMoneyLedgerEntry.created_at >= t0,
+            GameMoneyLedgerEntry.created_at < t1,
+        )
+    )
+    if scope is not None:
+        stmt = stmt.where(GameMoneyLedgerEntry.user_id.in_(scope))
+    if user.role != USER_ROLE_SUPER_ADMIN and user.site_id is not None:
+        stmt = stmt.where(User.site_id == user.site_id)
+    if login_id and login_id.strip():
+        stmt = stmt.where(User.login_id.ilike(f"%{login_id.strip()}%"))
+
+    stmt = stmt.order_by(desc(GameMoneyLedgerEntry.id)).offset(offset).limit(limit)
+    rows = db.execute(stmt).all()
+    items: List[Dict[str, Any]] = []
+    for ent, lid, dname in rows:
+        items.append(
+            {
+                "id": ent.id,
+                "user_id": ent.user_id,
+                "login_id": lid,
+                "display_name": dname,
+                "delta": str(ent.delta),
+                "balance_after": str(ent.balance_after),
+                "reason": label_game_money_reason(ent.reason),
+                "reference_type": ent.reference_type,
+                "reference_id": ent.reference_id,
+                "created_at": ent.created_at.isoformat() if ent.created_at else None,
+            }
+        )
+    return {"items": items, "limit": limit, "offset": offset}
+
+
+@router.get("/ledger/rolling-point", summary="롤링 포인트 원장 (하부·검색)")
+def admin_ledger_rolling_point(
+    user: User = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    login_id: Optional[str] = Query(None, description="로그인 ID 부분 일치"),
+    date_from: Optional[date] = Query(None, description="KST 시작일(포함)"),
+    date_to: Optional[date] = Query(None, description="KST 종료일(포함)"),
+) -> Dict[str, Any]:
+    scope = _ledger_scope_user_ids(db, user)
+    if scope is not None and len(scope) == 0:
+        return {"items": [], "limit": limit, "offset": offset}
+
+    t0, t1 = _kst_range_or_http(date_from, date_to)
+    stmt = (
+        select(RollingPointLedgerEntry, User.login_id, User.display_name)
+        .join(User, User.id == RollingPointLedgerEntry.user_id)
+        .where(
+            RollingPointLedgerEntry.created_at >= t0,
+            RollingPointLedgerEntry.created_at < t1,
+        )
+    )
+    if scope is not None:
+        stmt = stmt.where(RollingPointLedgerEntry.user_id.in_(scope))
+    if user.role != USER_ROLE_SUPER_ADMIN and user.site_id is not None:
+        stmt = stmt.where(User.site_id == user.site_id)
+    if login_id and login_id.strip():
+        stmt = stmt.where(User.login_id.ilike(f"%{login_id.strip()}%"))
+
+    stmt = stmt.order_by(desc(RollingPointLedgerEntry.id)).offset(offset).limit(limit)
+    rows = db.execute(stmt).all()
+    items: List[Dict[str, Any]] = []
+    for ent, lid, dname in rows:
+        items.append(
+            {
+                "id": ent.id,
+                "user_id": ent.user_id,
+                "login_id": lid,
+                "display_name": dname,
+                "delta": str(ent.delta),
+                "balance_after": str(ent.balance_after),
+                "reason": label_rolling_reason(ent.reason),
+                "reference_type": ent.reference_type,
+                "reference_id": ent.reference_id,
+                "created_at": ent.created_at.isoformat() if ent.created_at else None,
+            }
+        )
+    return {"items": items, "limit": limit, "offset": offset}
+
+
+def _bet_history_game_type_where(game_type: Optional[str]):
+    """
+    관리자 UI '바카라' 필터값 BACCARAT — gp_bet_history에는 Plxmed 기준 LIVE_CASINO·CASINO 로 저장됨.
+    """
+    if not game_type or not str(game_type).strip():
+        return None
+    u = str(game_type).strip().upper()[:32]
+    if u == "BACCARAT":
+        return BetHistory.game_type.in_(("LIVE_CASINO", "CASINO", "BACCARAT"))
+    return BetHistory.game_type == u
 
 
 @router.get("/bets/history", summary="하향 범위 통합 배팅 로그 (카지노·슬롯·파워볼·토토 game_type)")
@@ -547,18 +696,26 @@ def admin_bet_history(
     game_type: Optional[str] = None,
     game_result: Optional[str] = None,
     min_amount: Optional[str] = None,
+    date_from: Optional[date] = Query(None, description="KST 시작일(포함)"),
+    date_to: Optional[date] = Query(None, description="KST 종료일(포함)"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN
-    stmt = select(BetHistory, User.login_id).join(User, BetHistory.user_id == User.id)
+    t0, t1 = _kst_range_or_http(date_from, date_to)
+    stmt = (
+        select(BetHistory, User.login_id)
+        .join(User, BetHistory.user_id == User.id)
+        .where(BetHistory.created_at >= t0, BetHistory.created_at < t1)
+    )
     if not super_admin:
         allowed = downward_subtree_user_ids(db, user.id)
         stmt = stmt.where(BetHistory.user_id.in_(allowed))
     if login_id and login_id.strip():
         stmt = stmt.where(User.login_id.ilike(f"%{login_id.strip()}%"))
-    if game_type and game_type.strip():
-        stmt = stmt.where(BetHistory.game_type == game_type.strip().upper()[:32])
+    gt_where = _bet_history_game_type_where(game_type)
+    if gt_where is not None:
+        stmt = stmt.where(gt_where)
     if game_result is not None and game_result.strip() != "":
         stmt = stmt.where(BetHistory.game_result == game_result.strip().upper()[:16])
     if min_amount is not None and str(min_amount).strip() != "":
@@ -601,18 +758,26 @@ def admin_bet_history_lines(
     game_type: Optional[str] = None,
     game_result: Optional[str] = None,
     min_amount: Optional[str] = None,
+    date_from: Optional[date] = Query(None, description="KST 시작일(포함)"),
+    date_to: Optional[date] = Query(None, description="KST 종료일(포함)"),
     bet_limit: int = Query(80, ge=1, le=200, description="펼칠 배팅(건) 상한"),
     line_limit: int = Query(200, ge=1, le=500, description="반환 줄 수 상한"),
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN
-    stmt = select(BetHistory).join(User, BetHistory.user_id == User.id)
+    t0, t1 = _kst_range_or_http(date_from, date_to)
+    stmt = (
+        select(BetHistory)
+        .join(User, BetHistory.user_id == User.id)
+        .where(BetHistory.created_at >= t0, BetHistory.created_at < t1)
+    )
     if not super_admin:
         allowed = downward_subtree_user_ids(db, user.id)
         stmt = stmt.where(BetHistory.user_id.in_(allowed))
     if login_id and login_id.strip():
         stmt = stmt.where(User.login_id.ilike(f"%{login_id.strip()}%"))
-    if game_type and game_type.strip():
-        stmt = stmt.where(BetHistory.game_type == game_type.strip().upper()[:32])
+    gt_where = _bet_history_game_type_where(game_type)
+    if gt_where is not None:
+        stmt = stmt.where(gt_where)
     if game_result is not None and game_result.strip() != "":
         stmt = stmt.where(BetHistory.game_result == game_result.strip().upper()[:16])
     if min_amount is not None and str(min_amount).strip() != "":
@@ -1612,6 +1777,8 @@ def list_cash_requests(
     db: Session = Depends(get_db),
     req_status: Optional[str] = Query(None, alias="status"),
     request_type: Optional[str] = None,
+    date_from: Optional[date] = Query(None, description="접수일 KST 하한(포함) — 지정 시 기간 필터"),
+    date_to: Optional[date] = Query(None, description="접수일 KST 상한(포함)"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     sort: Optional[str] = Query(
@@ -1621,6 +1788,9 @@ def list_cash_requests(
 ) -> Dict[str, Any]:
     super_admin = user.role == USER_ROLE_SUPER_ADMIN
     stmt = select(CashRequest, User.login_id).join(User, CashRequest.user_id == User.id)
+    if date_from is not None or date_to is not None:
+        t0, t1 = _kst_range_or_http(date_from, date_to)
+        stmt = stmt.where(CashRequest.created_at >= t0, CashRequest.created_at < t1)
     if not super_admin:
         allowed = downward_subtree_user_ids(db, user.id)
         stmt = stmt.where(CashRequest.user_id.in_(allowed))
@@ -1711,6 +1881,8 @@ async def create_cash_request(
             "request_type": rtype,
             "amount": body.amount,
             "user_id": body.user_id,
+            "login_id": target_u.login_id,
+            "source": "admin",
         },
     )
     await _broadcast_dashboard_refresh()
@@ -1865,10 +2037,17 @@ def list_audit_logs(
     db: Session = Depends(get_db),
     action: Optional[str] = None,
     actor_login_id: Optional[str] = None,
+    date_from: Optional[date] = Query(None, description="KST 시작일(포함)"),
+    date_to: Optional[date] = Query(None, description="KST 종료일(포함)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
-    stmt = select(AuditLog).order_by(desc(AuditLog.created_at))
+    t0, t1 = _kst_range_or_http(date_from, date_to)
+    stmt = (
+        select(AuditLog)
+        .where(AuditLog.created_at >= t0, AuditLog.created_at < t1)
+        .order_by(desc(AuditLog.created_at))
+    )
     if action:
         stmt = stmt.where(AuditLog.action == action.upper())
     if actor_login_id:

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { KstDateRangeFields } from "@/components/admin/KstDateRangeFields";
 import { adminFetch } from "@/lib/adminFetch";
+import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -50,6 +52,8 @@ export function CashHistoryTablePage({ requestType, title, description }: Props)
   const isSuperAdmin = useAuthStore((s) => s.user?.role === "super_admin");
   const base = publicApiBase();
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState(() => kstDaysAgoYmd(30));
+  const [dateTo, setDateTo] = useState(() => kstTodayYmd());
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
@@ -57,11 +61,13 @@ export function CashHistoryTablePage({ requestType, title, description }: Props)
     p.set("sort", "recent");
     p.set("limit", "150");
     if (statusFilter) p.set("status", statusFilter);
+    p.set("date_from", dateFrom);
+    p.set("date_to", dateTo);
     return p;
-  }, [requestType, statusFilter]);
+  }, [requestType, statusFilter, dateFrom, dateTo]);
 
   const q = useQuery({
-    queryKey: ["admin", "cash-requests-history", token ?? "", requestType, statusFilter],
+    queryKey: ["admin", "cash-requests-history", token ?? "", requestType, statusFilter, dateFrom, dateTo],
     queryFn: async () => {
       if (!base || !token) throw new Error("no token");
       const r = await adminFetch(`${base}/admin/cash/requests?${params}`, {
@@ -89,9 +95,18 @@ export function CashHistoryTablePage({ requestType, title, description }: Props)
         </h1>
         <p className="mt-2 text-sm text-slate-500">{description}</p>
         <p className="mt-1 text-xs text-slate-600">
-          본인 계정과 추천 <strong className="text-slate-400">하부 전체</strong>의 신청만 표시됩니다.
+          본인 계정과 추천 <strong className="text-slate-400">하부 전체</strong>의 신청만 표시됩니다. 접수일 기준 (
+          <strong className="text-slate-400">KST</strong>).
         </p>
       </div>
+
+      <KstDateRangeFields
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
+        className="flex flex-wrap items-end gap-3"
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         {(

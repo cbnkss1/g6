@@ -1,7 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { KstDateRangeFields } from "@/components/admin/KstDateRangeFields";
+import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -57,6 +59,9 @@ export default function PowerballAdminPage() {
   const [amount, setAmount] = useState("1000");
   const [msg, setMsg] = useState<string | null>(null);
   const [oddsDraft, setOddsDraft] = useState<Record<string, string>>({});
+  const betsRange = useMemo(() => ({ from: kstDaysAgoYmd(6), to: kstTodayYmd() }), []);
+  const [betsDateFrom, setBetsDateFrom] = useState(betsRange.from);
+  const [betsDateTo, setBetsDateTo] = useState(betsRange.to);
 
   useEffect(() => {
     if (myUser?.id && userId === "") setUserId(String(myUser.id));
@@ -91,11 +96,12 @@ export default function PowerballAdminPage() {
   }, [ov.data?.odds_by_pick]);
 
   const betsQ = useQuery({
-    queryKey: ["admin", "powerball", "bets", token ?? ""],
+    queryKey: ["admin", "powerball", "bets", token ?? "", betsDateFrom, betsDateTo],
     queryFn: async () => {
       const base = publicApiBase();
       if (!base || !token) throw new Error("no token");
-      const r = await fetch(`${base}/admin/powerball/bets?limit=100`, {
+      const q = new URLSearchParams({ limit: "100", date_from: betsDateFrom, date_to: betsDateTo });
+      const r = await fetch(`${base}/admin/powerball/bets?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -427,7 +433,17 @@ export default function PowerballAdminPage() {
       </div>
 
       <section className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-4">
-        <h3 className="text-sm font-semibold text-slate-200">파워볼 배팅 내역</h3>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h3 className="text-sm font-semibold text-slate-200">파워볼 배팅 내역</h3>
+          <KstDateRangeFields
+            dateFrom={betsDateFrom}
+            dateTo={betsDateTo}
+            onDateFromChange={setBetsDateFrom}
+            onDateToChange={setBetsDateTo}
+            className="flex flex-wrap items-end gap-3"
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-slate-600">접수 시각 기준 · KST</p>
         <div className="mt-2 overflow-x-auto text-xs">
           <table className="w-full border-collapse text-left">
             <thead>

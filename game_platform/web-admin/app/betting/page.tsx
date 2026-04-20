@@ -3,6 +3,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { KstDateRangeFields } from "@/components/admin/KstDateRangeFields";
+import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAdminDashboardSocket } from "@/hooks/useAdminDashboardSocket";
@@ -24,6 +26,9 @@ type LineRow = {
 
 const GAME_LABEL: Record<string, string> = {
   BACCARAT: "카지노",
+  /** gp_bet_history 실제값 (Plxmed 콜백) — API에서 BACCARAT 필터와 함께 조회됨 */
+  LIVE_CASINO: "라이브 카지노",
+  CASINO: "카지노",
   SLOT: "슬롯",
   POWERBALL: "파워볼",
   SPORTS: "스포츠",
@@ -60,19 +65,31 @@ export default function BettingLogsPage() {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
   const url = useSearchParams();
+  const urlGameType = useMemo(() => {
+    const raw = url.get("game_type");
+    return raw?.trim() ? raw.trim().toUpperCase() : "";
+  }, [url]);
   const [loginFilter, setLoginFilter] = useState("");
-  const [gameType, setGameType] = useState("");
+  const [gameType, setGameType] = useState(urlGameType);
   const [gameResult, setGameResult] = useState("");
   const [minAmount, setMinAmount] = useState("");
-  const [applied, setApplied] = useState({ login: "", gt: "", gr: "", min: "" });
+  const kstDefault = useMemo(() => ({ from: kstDaysAgoYmd(6), to: kstTodayYmd() }), []);
+  const [dateFrom, setDateFrom] = useState(kstDefault.from);
+  const [dateTo, setDateTo] = useState(kstDefault.to);
+  const [applied, setApplied] = useState(() => ({
+    login: "",
+    gt: urlGameType,
+    gr: "",
+    min: "",
+    df: kstDefault.from,
+    dt: kstDefault.to,
+  }));
 
   useEffect(() => {
-    const raw = url.get("game_type");
-    if (!raw?.trim()) return;
-    const v = raw.trim().toUpperCase();
-    setGameType(v);
-    setApplied((prev) => ({ ...prev, gt: v }));
-  }, [url]);
+    if (!urlGameType) return;
+    setGameType(urlGameType);
+    setApplied((prev) => ({ ...prev, gt: urlGameType }));
+  }, [urlGameType]);
 
   useAdminDashboardSocket({
     onExtraMessage: (msg) => {
@@ -90,6 +107,8 @@ export default function BettingLogsPage() {
       if (applied.gt.trim()) p.set("game_type", applied.gt.trim());
       if (applied.gr.trim()) p.set("game_result", applied.gr.trim());
       if (applied.min.trim()) p.set("min_amount", applied.min.trim());
+      if (applied.df.trim()) p.set("date_from", applied.df.trim());
+      if (applied.dt.trim()) p.set("date_to", applied.dt.trim());
       p.set("bet_limit", "100");
       p.set("line_limit", "250");
       const r = await fetch(`${base}/admin/bets/history-lines?${p.toString()}`, {
@@ -155,6 +174,12 @@ export default function BettingLogsPage() {
       </div>
 
       <div className="glass-card-sm flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <KstDateRangeFields
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+        />
         {[
           { label: "아이디", value: loginFilter, set: setLoginFilter, placeholder: "부분 검색", type: "text" },
           { label: "최소 배팅액", value: minAmount, set: setMinAmount, placeholder: "0", type: "decimal" },
@@ -212,7 +237,16 @@ export default function BettingLogsPage() {
           </label>
         ))}
         <button
-          onClick={() => setApplied({ login: loginFilter, gt: gameType, gr: gameResult, min: minAmount })}
+          onClick={() =>
+            setApplied({
+              login: loginFilter,
+              gt: gameType,
+              gr: gameResult,
+              min: minAmount,
+              df: dateFrom,
+              dt: dateTo,
+            })
+          }
           className="admin-touch-btn rounded-xl px-6 text-sm font-semibold text-slate-950 transition-all hover:shadow-glow-gold"
           style={{ background: "linear-gradient(135deg, #d4af37, #f0e2a8, #8a7530)" }}
         >

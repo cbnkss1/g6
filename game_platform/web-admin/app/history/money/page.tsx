@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { formatIsoAsKst } from "@/lib/formatKst";
+import { useEffect, useMemo, useState } from "react";
+import { KstDateRangeFields } from "@/components/admin/KstDateRangeFields";
+import { formatIsoAsKst, kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -30,9 +31,18 @@ const PAGE = 100;
 
 export default function HistoryMoneyPage() {
   const token = useAuthStore((s) => s.token);
+  const kstDefault = useMemo(() => ({ from: kstDaysAgoYmd(6), to: kstTodayYmd() }), []);
   const [loginId, setLoginId] = useState("");
   const [appliedLogin, setAppliedLogin] = useState("");
+  const [dateFrom, setDateFrom] = useState(kstDefault.from);
+  const [dateTo, setDateTo] = useState(kstDefault.to);
+  const [appliedFrom, setAppliedFrom] = useState(kstDefault.from);
+  const [appliedTo, setAppliedTo] = useState(kstDefault.to);
   const [offset, setOffset] = useState(0);
+
+  useEffect(() => {
+    setOffset(0);
+  }, [appliedFrom, appliedTo, appliedLogin]);
 
   const q = useQuery({
     queryKey: [
@@ -41,6 +51,8 @@ export default function HistoryMoneyPage() {
       "game-money",
       token ?? "",
       appliedLogin,
+      appliedFrom,
+      appliedTo,
       offset,
     ],
     queryFn: async () => {
@@ -50,11 +62,20 @@ export default function HistoryMoneyPage() {
       sp.set("limit", String(PAGE));
       sp.set("offset", String(offset));
       if (appliedLogin.trim()) sp.set("login_id", appliedLogin.trim());
+      sp.set("date_from", appliedFrom);
+      sp.set("date_to", appliedTo);
       const r = await fetch(`${base}/admin/ledger/game-money?${sp}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      if (!r.ok) throw new Error(`ledger ${r.status}`);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        const detail =
+          err && typeof err === "object" && "detail" in err
+            ? String((err as { detail: unknown }).detail)
+            : r.statusText;
+        throw new Error(detail || `ledger ${r.status}`);
+      }
       return (await r.json()) as ApiResponse;
     },
     enabled: Boolean(token),
@@ -72,11 +93,18 @@ export default function HistoryMoneyPage() {
       <div>
         <h2 className="text-lg font-semibold text-slate-100">머니 이동내역</h2>
         <p className="mt-1 text-sm text-slate-500">
-          게임머니 원장(배팅·입출금·조정 등). 하부 회원만 표시됩니다.
+          게임머니 원장(배팅·입출금·조정 등). 하부 회원만 표시됩니다. (
+          <strong className="text-slate-400">기간: KST</strong>)
         </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
+        <KstDateRangeFields
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+        />
         <label className="flex flex-col gap-1 text-xs text-slate-500">
           로그인 ID 검색
           <input
@@ -93,6 +121,8 @@ export default function HistoryMoneyPage() {
           onClick={() => {
             setOffset(0);
             setAppliedLogin(loginId);
+            setAppliedFrom(dateFrom);
+            setAppliedTo(dateTo);
           }}
         >
           검색
@@ -103,7 +133,7 @@ export default function HistoryMoneyPage() {
         <p className="text-sm text-slate-500">불러오는 중…</p>
       ) : q.isError ? (
         <p className="text-sm text-red-400">
-          목록을 불러오지 못했습니다. 로그인·API를 확인하세요.
+          목록을 불러오지 못했습니다. {(q.error as Error)?.message ?? "API를 확인하세요."}
         </p>
       ) : (
         <>

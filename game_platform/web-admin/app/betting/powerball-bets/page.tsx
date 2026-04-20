@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { KstDateRangeFields } from "@/components/admin/KstDateRangeFields";
 import { adminFetch } from "@/lib/adminFetch";
+import { kstDaysAgoYmd, kstTodayYmd } from "@/lib/formatKst";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
 
@@ -37,9 +39,12 @@ function fmtDt(iso: string | null) {
 
 export default function PowerballBettingHistoryPage() {
   const token = useAuthStore((s) => s.token);
+  const kd = useMemo(() => ({ from: kstDaysAgoYmd(6), to: kstTodayYmd() }), []);
   const [loginFilter, setLoginFilter] = useState("");
   const [userId, setUserId] = useState("");
   const [gameKey, setGameKey] = useState("");
+  const [dateFrom, setDateFrom] = useState(kd.from);
+  const [dateTo, setDateTo] = useState(kd.to);
   const [offset, setOffset] = useState(0);
   const limit = 80;
 
@@ -49,8 +54,10 @@ export default function PowerballBettingHistoryPage() {
       uid: userId.trim(),
       gk: gameKey.trim(),
       offset,
+      df: dateFrom,
+      dt: dateTo,
     }),
-    [loginFilter, userId, gameKey, offset],
+    [loginFilter, userId, gameKey, offset, dateFrom, dateTo],
   );
 
   const q = useQuery({
@@ -67,6 +74,8 @@ export default function PowerballBettingHistoryPage() {
         if (Number.isFinite(n) && n > 0) p.set("user_id", String(n));
       }
       if (applied.gk) p.set("game_key", applied.gk);
+      p.set("date_from", applied.df);
+      p.set("date_to", applied.dt);
       const r = await adminFetch(`${base}/admin/powerball/bets?${p}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
@@ -110,6 +119,18 @@ export default function PowerballBettingHistoryPage() {
       </div>
 
       <div className="glass-card-sm flex flex-col flex-wrap gap-3 p-4 sm:flex-row sm:items-end">
+        <KstDateRangeFields
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={(v) => {
+            setDateFrom(v);
+            setOffset(0);
+          }}
+          onDateToChange={(v) => {
+            setDateTo(v);
+            setOffset(0);
+          }}
+        />
         <label className="flex min-w-[140px] flex-1 flex-col gap-1">
           <span className="text-[10px] font-medium uppercase tracking-widest text-slate-600">아이디 (부분)</span>
           <input

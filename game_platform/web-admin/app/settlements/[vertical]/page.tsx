@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { notFound, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { formatIsoAsKst, kstTodayYmd } from "@/lib/formatKst";
+import { defaultDetailScopeFromRow, type RollingDetailScope } from "@/lib/rollingDetailScope";
 import { formatMoneyInt } from "@/lib/formatMoney";
 import { publicApiBase } from "@/lib/publicApiBase";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -56,6 +57,9 @@ type RollingRecipientRow = {
   user_id: number;
   login_id: string;
   rolling_paid_sum: string;
+  rolling_self_sum?: string;
+  rolling_diff_losing_sum?: string;
+  rolling_referral_sum?: string;
   ledger_count: number;
 };
 
@@ -73,6 +77,9 @@ type RollingApiResponse = {
     total_bet_sum: string;
     valid_bet_sum: string;
     rolling_paid_sum: string;
+    rolling_self_sum?: string;
+    rolling_diff_losing_sum?: string;
+    rolling_referral_sum?: string;
   };
 };
 
@@ -95,8 +102,11 @@ type RollingDetailResponse = {
   date_from: string;
   date_to: string;
   vertical: string;
+  detail_scope?: string;
   items: RollingDetailItem[];
 };
+
+type DetailScope = RollingDetailScope;
 
 function isVertical(v: string): v is SettlementVertical {
   return (VALID_VERTICALS as readonly string[]).includes(v);
@@ -120,9 +130,12 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
   const [dateTo, setDateTo] = useState(today);
   const [parentId, setParentId] = useState<string>(me?.id != null ? String(me.id) : "1");
   const [showRolling, setShowRolling] = useState(true);
-  const [detailRecipient, setDetailRecipient] = useState<{ user_id: number; login_id: string } | null>(
-    null,
-  );
+  const [detailRecipient, setDetailRecipient] = useState<{
+    user_id: number;
+    login_id: string;
+    initialScope: DetailScope;
+  } | null>(null);
+  const [detailScope, setDetailScope] = useState<DetailScope>("chain");
 
   useEffect(() => {
     if (me?.id != null) setParentId(String(me.id));
@@ -197,6 +210,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
       dateFrom,
       dateTo,
       vertical,
+      detailScope,
     ],
     queryFn: async () => {
       const base = publicApiBase();
@@ -206,6 +220,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
         date_from: dateFrom,
         date_to: dateTo,
         vertical,
+        detail_scope: detailScope,
       });
       const r = await fetch(`${base}/admin/settlements/rolling-lines/detail?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -310,7 +325,6 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                   <th className="p-2 text-right">당첨</th>
                   <th className="p-2 text-right">배팅손익</th>
                   <th className="p-2 text-right">롤링합</th>
-                  <th className="p-2 text-right">차액루징(P)</th>
                   <th className="p-2 text-right">배팅정산</th>
                   <th className="p-2 text-right">루징(추정)</th>
                   <th className="p-2 text-right">보유머니</th>
@@ -320,7 +334,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
               <tbody>
                 {totalQ.data.rows.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="p-6 text-center text-slate-500">
+                    <td colSpan={12} className="p-6 text-center text-slate-500">
                       표시할 데이터가 없습니다.
                     </td>
                   </tr>
@@ -361,9 +375,6 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                       <td className="p-2 text-right tabular-nums">{formatMoneyInt(row.win_amount)}</td>
                       <td className="p-2 text-right tabular-nums">{formatMoneyInt(row.bet_profit_loss)}</td>
                       <td className="p-2 text-right tabular-nums">{formatMoneyInt(row.rolling_total)}</td>
-                      <td className="p-2 text-right tabular-nums text-slate-400">
-                        {formatMoneyInt(row.losing_point_ledger)}
-                      </td>
                       <td className="p-2 text-right tabular-nums font-medium text-premium">
                         {formatMoneyInt(row.bet_settlement)}
                       </td>
@@ -403,9 +414,6 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                     <td className="p-2 text-right tabular-nums">
                       {formatMoneyInt(totalQ.data.totals.rolling_total)}
                     </td>
-                    <td className="p-2 text-right tabular-nums text-slate-500">
-                      {formatMoneyInt(totalQ.data.totals.losing_point_ledger)}
-                    </td>
                     <td className="p-2 text-right tabular-nums text-premium">
                       {formatMoneyInt(totalQ.data.totals.bet_settlement)}
                     </td>
@@ -432,8 +440,8 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
           <div>
             <h3 className="text-base font-semibold text-slate-200">롤링포인트 수령 합계 ({title.replace(" 정산", "")})</h3>
             <p className="mt-1 text-xs text-slate-500">
-              선택한 기간·종목에서 수령인별로 합산합니다. 행을 클릭하면{" "}
-              <strong className="text-slate-400">건별 원장</strong>을 봅니다.
+              <strong className="text-slate-400">차액 롤(P)</strong>은 상부가 받는 차액 롤링만 합산합니다. 행을
+              누르면 원장 상세(기본: 차액 롤링만)를 봅니다.
             </p>
           </div>
           <span className="text-slate-500">{showRolling ? "접기" : "펼치기"}</span>
@@ -454,18 +462,21 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                   </span>
                 </p>
                 <div className="table-scroll rounded-xl border border-slate-800 bg-slate-900/40">
-                  <table className="w-full min-w-[480px] text-left text-sm text-slate-300">
+                  <table className="w-full min-w-[720px] text-left text-sm text-slate-300">
                     <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
                       <tr>
                         <th className="p-3">수령 회원</th>
-                        <th className="p-3 text-right">롤링 합계(P)</th>
+                        <th className="p-3 text-right">차액 롤(P)</th>
+                        <th className="p-3 text-right">본인(P)</th>
+                        <th className="p-3 text-right">차액루징(P)</th>
+                        <th className="p-3 text-right">추천(P)</th>
                         <th className="p-3 text-right">원장 건수</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(rollingQ.data.recipient_totals ?? []).length === 0 ? (
                         <tr>
-                          <td colSpan={3} className="p-6 text-center text-slate-500">
+                          <td colSpan={6} className="p-6 text-center text-slate-500">
                             해당 기간·종목의 롤링 지급 내역이 없습니다.
                           </td>
                         </tr>
@@ -476,15 +487,39 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                             role="button"
                             tabIndex={0}
                             className="cursor-pointer border-b border-slate-800/70 hover:bg-slate-800/30"
-                            onClick={() => setDetailRecipient({ user_id: row.user_id, login_id: row.login_id })}
+                            onClick={() => {
+                              const s = defaultDetailScopeFromRow(row);
+                              setDetailScope(s);
+                              setDetailRecipient({
+                                user_id: row.user_id,
+                                login_id: row.login_id,
+                                initialScope: s,
+                              });
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ")
-                                setDetailRecipient({ user_id: row.user_id, login_id: row.login_id });
+                              if (e.key === "Enter" || e.key === " ") {
+                                const s = defaultDetailScopeFromRow(row);
+                                setDetailScope(s);
+                                setDetailRecipient({
+                                  user_id: row.user_id,
+                                  login_id: row.login_id,
+                                  initialScope: s,
+                                });
+                              }
                             }}
                           >
                             <td className="p-3 font-mono text-premium">{row.login_id}</td>
                             <td className="p-3 text-right tabular-nums text-emerald-300/90">
                               {formatMoneyInt(row.rolling_paid_sum)}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_self_sum ?? "0")}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_diff_losing_sum ?? "0")}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-slate-400">
+                              {formatMoneyInt(row.rolling_referral_sum ?? "0")}
                             </td>
                             <td className="p-3 text-right tabular-nums text-slate-500">
                               {row.ledger_count}
@@ -499,6 +534,15 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                           <td className="p-3 text-slate-400">합계</td>
                           <td className="p-3 text-right tabular-nums text-emerald-300">
                             {formatMoneyInt(rollingQ.data.totals.rolling_paid_sum)}
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_self_sum ?? "0")}
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_diff_losing_sum ?? "0")}
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-slate-400">
+                            {formatMoneyInt(rollingQ.data.totals.rolling_referral_sum ?? "0")}
                           </td>
                           <td className="p-3" />
                         </tr>
@@ -523,18 +567,39 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
           }}
         >
           <div className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
               <h4 id="rolling-detail-title" className="text-sm font-semibold text-slate-100">
                 롤링 원장 상세 — {detailRecipient.login_id} (#{detailRecipient.user_id})
               </h4>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                onClick={() => setDetailRecipient(null)}
-              >
-                닫기
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-500">
+                  구분
+                  <select
+                    value={detailScope}
+                    onChange={(e) => setDetailScope(e.target.value as DetailScope)}
+                    className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="chain">차액 롤링만</option>
+                    <option value="self">본인 롤링만</option>
+                    <option value="losing">차액 루징만</option>
+                    <option value="referral">추천 롤링만</option>
+                    <option value="all">전체</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  onClick={() => setDetailRecipient(null)}
+                >
+                  닫기
+                </button>
+              </div>
             </div>
+            <p className="border-b border-slate-800 px-4 pb-2 text-[11px] leading-relaxed text-slate-500">
+              <strong className="text-slate-400">차액 롤링</strong>이 0이면 본인·추천·루징 건은{" "}
+              <strong className="text-slate-400">구분</strong>에서 바꿔야 보입니다. 행을 누르면 위 표 숫자에 맞게
+              기본값이 잡힙니다.
+            </p>
             <div className="max-h-[calc(85vh-3.5rem)] overflow-auto p-4">
               {detailQ.isLoading && <p className="text-sm text-slate-500">불러오는 중…</p>}
               {detailQ.isError && (
@@ -558,7 +623,7 @@ function SettlementVerticalBody({ vertical }: { vertical: SettlementVertical }) 
                       {detailQ.data.items.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-6 text-center text-slate-500">
-                            건별 내역이 없습니다.
+                            해당 구간에 건별 내역이 없습니다.
                           </td>
                         </tr>
                       ) : (
